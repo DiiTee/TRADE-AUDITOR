@@ -7,16 +7,34 @@ const path    = require('path');
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
-const GT_API_KEY  = process.env.GECKO_API_KEY  || '';
-const GT_BASE     = 'https://api.geckoterminal.com/api/v2';
+const GT_API_KEY   = process.env.GECKO_API_KEY || '';
+const GT_BASE      = 'https://api.geckoterminal.com/api/v2';
 const MORALIS_BASE = 'https://solana-gateway.moralis.io';
+
+// ── Retry helper ──────────────────────────────────────────────────
+// Retries a fetch on 429 (rate-limited) up to `maxRetries` times.
+// Respects the Retry-After header when present; otherwise backs off
+// exponentially starting at 2 s.
+async function fetchWithRetry(url, options, maxRetries = 4) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const r = await fetch(url, options);
+
+    if (r.status !== 429 || attempt === maxRetries) return r;
+
+    const retryAfterSec = parseInt(r.headers.get('retry-after') || '0', 10);
+    const backoffMs = retryAfterSec > 0
+      ? retryAfterSec * 1000
+      : Math.min(2000 * 2 ** attempt, 30000); // 2 s, 4 s, 8 s, 16 s … capped at 30 s
+
+    console.log(`[Gecko] 429 rate-limited — retrying in ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+    await new Promise(res => setTimeout(res, backoffMs));
+  }
+}
 
 // ── Serve static frontend ─────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── GeckoTerminal proxy ───────────────────────────────────────────
-// All requests to /api/gecko/* are forwarded to GeckoTerminal with
-// the server-side API key attached.
 app.get('/api/gecko/*', async (req, res) => {
   const subPath  = req.params[0] || '';
   const queryStr = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
@@ -26,7 +44,7 @@ app.get('/api/gecko/*', async (req, res) => {
   if (GT_API_KEY) headers['x-cg-demo-api-key'] = GT_API_KEY;
 
   try {
-    const upstream = await fetch(target, { headers });
+    const upstream = await fetchWithRetry(target, { headers });
     const body     = await upstream.text();
     res
       .status(upstream.status)
@@ -39,8 +57,6 @@ app.get('/api/gecko/*', async (req, res) => {
 });
 
 // ── Moralis proxy ─────────────────────────────────────────────────
-// Moralis key is supplied by the user in the browser and forwarded
-// here as X-Moralis-Key; the proxy re-attaches it as X-API-Key.
 app.get('/api/moralis/*', async (req, res) => {
   const subPath  = req.params[0] || '';
   const queryStr = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';

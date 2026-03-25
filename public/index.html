@@ -481,6 +481,13 @@ async function gtOHLCV(addr, beforeTs) {
   let url = `${GT}/networks/solana/pools/${addr}/ohlcv/minute?aggregate=1&limit=1000`;
   if (beforeTs) url += `&before_timestamp=${beforeTs}`;
   const r = await apiFetch(url);
+  if (r.status === 429) {
+    throw new Error(
+      'GeckoTerminal rate limit reached (429).\n' +
+      'The server already retries automatically — if you see this, please wait 60 seconds and try again.\n' +
+      'Make sure your GECKO_API_KEY is set correctly in the server environment.'
+    );
+  }
   if (!r.ok) throw new Error(`GeckoTerminal OHLCV fetch failed (${r.status}).`);
   const d = await r.json();
   return (d.data && d.data.attributes && d.data.attributes.ohlcv_list) || [];
@@ -490,14 +497,18 @@ async function gtOHLCV(addr, beforeTs) {
  * Fetch enough pages so we have data back to at least (entryTs - 120 min).
  * GeckoTerminal returns candles in DESCENDING order.
  * Each candle: [timestamp, open, high, low, close, volume]
+ *
+ * The Demo API allows ~30 req/min. We wait 2.2 s between pages so we stay
+ * safely under the limit even across pool-lookup + OHLCV requests.
  */
 async function fetchAllGT(addr, entryTs) {
   let all = [];
   let beforeTs = null;
   const TARGET = entryTs - 7200; // 2 h before entry for pre-entry PB note
+  const PAGE_DELAY = 2200; // ms between OHLCV page requests (~27 req/min)
 
   for (let page = 0; page < 25; page++) {
-    setProgress(10 + page * 3, `Fetching OHLCV page ${page + 1}…`);
+    setProgress(10 + page * 3, `Fetching OHLCV page ${page + 1}… (pacing requests)`);
     const batch = await gtOHLCV(addr, beforeTs);
     if (!batch || batch.length === 0) break;
 
@@ -510,7 +521,7 @@ async function fetchAllGT(addr, entryTs) {
     if (earliest <= TARGET) break;
 
     beforeTs = earliest - 1;
-    await new Promise(r => setTimeout(r, 350)); // polite rate limit
+    await new Promise(r => setTimeout(r, PAGE_DELAY));
   }
 
   all.sort((a, b) => a[0] - b[0]);
