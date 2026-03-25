@@ -1,0 +1,14 @@
+{
+  "name": "trade-auditor",
+  "version": "1.0.0",
+  "description": "Crypto Chart Analysis Engine — Trade Auditor",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.1",
+    "node-fetch": "^2.7.0"
+  }
+}
