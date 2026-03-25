@@ -11,23 +11,41 @@ const GT_API_KEY   = process.env.GECKO_API_KEY || '';
 const GT_BASE      = 'https://api.geckoterminal.com/api/v2';
 const MORALIS_BASE = 'https://solana-gateway.moralis.io';
 
-// ── Retry helper ──────────────────────────────────────────────────
-// Retries a fetch on 429 (rate-limited) up to `maxRetries` times.
-// Respects the Retry-After header when present; otherwise backs off
-// exponentially starting at 2 s.
-async function fetchWithRetry(url, options, maxRetries = 4) {
+// ── GeckoTerminal rate-limited queue ─────────────────────────────
+// The Demo API allows 30 calls/minute.  We serialize every outgoing
+// GT request through this queue and enforce a minimum 2.1 s gap so
+// we physically cannot exceed ~28 req/min — no matter how fast the
+// browser fires page requests.
+const GT_MIN_INTERVAL_MS = 2100;
+let _gtQueue      = Promise.resolve(); // chain every call onto this
+let _lastGTCallAt = 0;
+
+function queuedGTFetch(url, options) {
+  _gtQueue = _gtQueue.then(async () => {
+    const gap = Date.now() - _lastGTCallAt;
+    if (gap < GT_MIN_INTERVAL_MS) {
+      await new Promise(r => setTimeout(r, GT_MIN_INTERVAL_MS - gap));
+    }
+    _lastGTCallAt = Date.now();
+    return fetch(url, options);
+  });
+  return _gtQueue;
+}
+
+// ── Retry helper (safety net on top of the queue) ─────────────────
+// If a 429 still slips through (e.g. burst from a previous run that
+// exhausted the window), wait one full rate-limit window (65 s) then
+// try again.  Up to 2 extra attempts.
+async function gtFetchWithRetry(url, options, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const r = await fetch(url, options);
+    const r = await queuedGTFetch(url, options);
 
     if (r.status !== 429 || attempt === maxRetries) return r;
 
     const retryAfterSec = parseInt(r.headers.get('retry-after') || '0', 10);
-    const backoffMs = retryAfterSec > 0
-      ? retryAfterSec * 1000
-      : Math.min(2000 * 2 ** attempt, 30000); // 2 s, 4 s, 8 s, 16 s … capped at 30 s
-
-    console.log(`[Gecko] 429 rate-limited — retrying in ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries})`);
-    await new Promise(res => setTimeout(res, backoffMs));
+    const waitMs = retryAfterSec > 0 ? retryAfterSec * 1000 : 65000; // default: 65 s
+    console.log(`[Gecko] 429 — waiting ${waitMs / 1000}s before retry ${attempt + 1}/${maxRetries}`);
+    await new Promise(r => setTimeout(r, waitMs));
   }
 }
 
@@ -44,7 +62,7 @@ app.get('/api/gecko/*', async (req, res) => {
   if (GT_API_KEY) headers['x-cg-demo-api-key'] = GT_API_KEY;
 
   try {
-    const upstream = await fetchWithRetry(target, { headers });
+    const upstream = await gtFetchWithRetry(target, { headers });
     const body     = await upstream.text();
     res
       .status(upstream.status)
@@ -91,6 +109,7 @@ app.listen(PORT, '0.0.0.0', () => {
   if (GT_API_KEY) {
     console.log('[Trade Auditor] GeckoTerminal API key: loaded from env');
   } else {
-    console.log('[Trade Auditor] GeckoTerminal API key: NOT SET (add GECKO_API_KEY env var for higher rate limits)');
+    console.log('[Trade Auditor] GeckoTerminal API key: NOT SET (add GECKO_API_KEY for better rate limits)');
   }
+  console.log(`[Trade Auditor] GT request pacing: one request every ${GT_MIN_INTERVAL_MS}ms`);
 });

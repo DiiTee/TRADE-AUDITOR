@@ -505,10 +505,10 @@ async function fetchAllGT(addr, entryTs) {
   let all = [];
   let beforeTs = null;
   const TARGET = entryTs - 7200; // 2 h before entry for pre-entry PB note
-  const PAGE_DELAY = 2200; // ms between OHLCV page requests (~27 req/min)
-
+  // No client-side delay needed — the server queue enforces 2.1 s between
+  // every outgoing GeckoTerminal call so we can fire pages as fast as possible.
   for (let page = 0; page < 25; page++) {
-    setProgress(10 + page * 3, `Fetching OHLCV page ${page + 1}… (pacing requests)`);
+    setProgress(10 + page * 3, `Fetching OHLCV page ${page + 1}…`);
     const batch = await gtOHLCV(addr, beforeTs);
     if (!batch || batch.length === 0) break;
 
@@ -521,7 +521,6 @@ async function fetchAllGT(addr, entryTs) {
     if (earliest <= TARGET) break;
 
     beforeTs = earliest - 1;
-    await new Promise(r => setTimeout(r, PAGE_DELAY));
   }
 
   all.sort((a, b) => a[0] - b[0]);
