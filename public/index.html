@@ -505,8 +505,11 @@ async function fetchAllGT(addr, entryTs) {
   let all = [];
   let beforeTs = null;
   const TARGET = entryTs - 7200; // 2 h before entry for pre-entry PB note
-  // No client-side delay needed — the server queue enforces 2.1 s between
-  // every outgoing GeckoTerminal call so we can fire pages as fast as possible.
+  // 2.1 s between pages keeps requests under GeckoTerminal's 30 req/min limit.
+  // This runs in the browser so it works on both Replit and Vercel (where
+  // serverless instances don't share in-memory state between calls).
+  const PAGE_DELAY_MS = 2100;
+
   for (let page = 0; page < 25; page++) {
     setProgress(10 + page * 3, `Fetching OHLCV page ${page + 1}…`);
     const batch = await gtOHLCV(addr, beforeTs);
@@ -521,6 +524,7 @@ async function fetchAllGT(addr, entryTs) {
     if (earliest <= TARGET) break;
 
     beforeTs = earliest - 1;
+    await new Promise(r => setTimeout(r, PAGE_DELAY_MS));
   }
 
   all.sort((a, b) => a[0] - b[0]);

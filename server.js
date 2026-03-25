@@ -103,13 +103,21 @@ app.get('/api/moralis/*', async (req, res) => {
 // ── Health check ──────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-// ── Start ─────────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Trade Auditor] Server running on port ${PORT}`);
-  if (GT_API_KEY) {
-    console.log('[Trade Auditor] GeckoTerminal API key: loaded from env');
-  } else {
-    console.log('[Trade Auditor] GeckoTerminal API key: NOT SET (add GECKO_API_KEY for better rate limits)');
-  }
-  console.log(`[Trade Auditor] GT request pacing: one request every ${GT_MIN_INTERVAL_MS}ms`);
-});
+// ── Start (local / Replit) ────────────────────────────────────────
+// On Vercel the file is imported as a module; app.listen() must not
+// be called in that context.  `require.main === module` is true only
+// when the file is executed directly (node server.js).
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Trade Auditor] Server running on port ${PORT}`);
+    if (GT_API_KEY) {
+      console.log('[Trade Auditor] GeckoTerminal API key: loaded from env');
+    } else {
+      console.log('[Trade Auditor] GeckoTerminal API key: NOT SET (add GECKO_API_KEY for better rate limits)');
+    }
+    console.log(`[Trade Auditor] GT request pacing: one request every ${GT_MIN_INTERVAL_MS}ms`);
+  });
+}
+
+// Export for Vercel serverless
+module.exports = app;
