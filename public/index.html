@@ -844,7 +844,7 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
     if (field === 'drop')    return fmt.pct(pb.dropPct);
     if (field === 'low')     return `${fmt.mc(pb.lowMC)} [${fmt.ts(pb.lowTs)}]`;
     if (field === 'esl')     return eslHit ? '❌ TRIGGERED' : '✅ SAFE';
-    if (field === 'tsl')     return tslHit ? '❌ TRIGGERED' : '✅ SAFE';
+    if (field === 'tsl')     return tslHit ? '❌ SL HIT'   : '✅ SAFE';
   };
 
   // ── Post-PB3 volatility ──
@@ -1050,6 +1050,23 @@ async function runAudit() {
     setProgress(78, 'Tracking milestones and TP levels…');
     const { milestones, tpHits } = trackMilestonesAndTPs(mcCandles, entryMC, tpLevels);
 
+    // ─ Invalidate TPs that occur after the trade was stopped out ─
+    // If a stop-loss fires, the position is closed at that moment.
+    // Any TP level the price "hit" after that point is irrelevant —
+    // you were no longer in the trade.
+    const exitTs = (() => {
+      let t = null;
+      if (esl.triggered) t = esl.ts;
+      if (tsl.triggered && (t === null || tsl.ts < t)) t = tsl.ts;
+      return t;
+    })();
+
+    if (exitTs !== null) {
+      for (const key of Object.keys(tpHits)) {
+        if (tpHits[key].ts > exitTs) delete tpHits[key];
+      }
+    }
+
     // ─ Pullbacks ─
     setProgress(83, 'Detecting pullback cycles…');
     const pullbacks = detectPullbacks(mcCandles, entryMC);
@@ -1101,7 +1118,7 @@ async function runAudit() {
         </div>
         <div class="m-card">
           <div class="ml">Trailing SL</div>
-          <div class="mv ${tsl.triggered ? 'red' : 'green'}">${tsl.triggered ? 'TRIGGERED' : 'SAFE'}</div>
+          <div class="mv ${tsl.triggered ? 'red' : 'green'}">${tsl.triggered ? 'SL HIT' : 'SAFE'}</div>
         </div>
         <div class="m-card">
           <div class="ml">Cycles</div>
