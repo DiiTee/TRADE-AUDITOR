@@ -843,7 +843,7 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
     const tslHit = pb.lowMC <= tslTrigger;
     if (field === 'drop')    return fmt.pct(pb.dropPct);
     if (field === 'low')     return `${fmt.mc(pb.lowMC)} [${fmt.ts(pb.lowTs)}]`;
-    if (field === 'esl')     return eslHit ? '❌ TRIGGERED' : '✅ SAFE';
+    if (field === 'esl')     return eslHit ? '❌ SL HIT'   : '✅ SAFE';
     if (field === 'tsl')     return tslHit ? '❌ SL HIT'   : '✅ SAFE';
   };
 
@@ -1114,7 +1114,7 @@ async function runAudit() {
         </div>
         <div class="m-card">
           <div class="ml">Entry SL</div>
-          <div class="mv ${esl.triggered ? 'red' : 'green'}">${esl.triggered ? 'TRIGGERED' : 'SAFE'}</div>
+          <div class="mv ${esl.triggered ? 'red' : 'green'}">${esl.triggered ? 'SL HIT' : 'SAFE'}</div>
         </div>
         <div class="m-card">
           <div class="ml">Trailing SL</div>
