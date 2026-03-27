@@ -663,21 +663,25 @@ function countCycles(candles, entryMC) {
 // PARALLEL SL SIMULATION
 // ──────────────────────────────────────────────
 function runSLSimulation(candles, entryMC, entrySLPct, trailSLPct) {
-  const eslTrigger = entryMC * (1 - entrySLPct / 100);
-  let esl = { triggered: false, ts: null, mc: null, trigger: eslTrigger };
-  let tsl = { triggered: false, ts: null, mc: null, highest: entryMC, highestTs: null };
+  // 0 means the user disabled that SL — skip it entirely.
+  const eslDisabled = entrySLPct === 0;
+  const tslDisabled = trailSLPct === 0;
+
+  const eslTrigger = eslDisabled ? -Infinity : entryMC * (1 - entrySLPct / 100);
+  let esl = { triggered: false, ts: null, mc: null, trigger: eslTrigger, disabled: eslDisabled };
+  let tsl = { triggered: false, ts: null, mc: null, highest: entryMC, highestTs: null, disabled: tslDisabled };
 
   for (const c of candles) {
-    // Update TSL highest
+    // Always track highest for ATH purposes even if TSL disabled
     if (c.high > tsl.highest) { tsl.highest = c.high; tsl.highestTs = c.ts; }
 
-    // ESL check — use LOW wick
-    if (!esl.triggered && c.low <= eslTrigger) {
+    // ESL check — use LOW wick (skip if disabled)
+    if (!eslDisabled && !esl.triggered && c.low <= eslTrigger) {
       esl.triggered = true; esl.ts = c.ts; esl.mc = c.low;
     }
 
-    // TSL check — use LOW wick
-    if (!tsl.triggered) {
+    // TSL check — use LOW wick (skip if disabled)
+    if (!tslDisabled && !tsl.triggered) {
       const tslTrigger = tsl.highest * (1 - trailSLPct / 100);
       if (c.low <= tslTrigger) {
         tsl.triggered = true; tsl.ts = c.ts; tsl.mc = c.low; tsl.finalTrigger = tslTrigger;
@@ -758,28 +762,41 @@ function evalFloor(entryMC, pullbacks) {
 }
 
 function evalSLLogic(esl, tsl, entryMC, athMC) {
-  if (!esl.triggered && !tsl.triggered) {
-    return `🛡️  PROTECTED — Neither SL triggered. Full ride to ATH ${fmt.mc(athMC)} was possible with TSL discipline.`;
+  const eslActive = !esl.disabled;
+  const tslActive = !tsl.disabled;
+
+  if (eslActive && !esl.triggered && tslActive && !tsl.triggered)
+    return `🛡️  PROTECTED — Neither SL hit. Full ride to ATH ${fmt.mc(athMC)} was possible.`;
+
+  if (!eslActive && tslActive && !tsl.triggered)
+    return `🛡️  PROTECTED — TSL never hit. Full ride to ATH ${fmt.mc(athMC)} was possible. (ESL disabled)`;
+
+  if (eslActive && !esl.triggered && !tslActive)
+    return `🛡️  PROTECTED — ESL never hit. Full ride to ATH ${fmt.mc(athMC)} was possible. (TSL disabled)`;
+
+  if (tslActive && tsl.triggered && eslActive && !esl.triggered)
+    return `📍 TRAILING SL HIT — TSL closed position at ${fmt.mc(tsl.mc)} [${fmt.ts(tsl.ts)}]. Locked in partial gains from ATH ${fmt.mc(athMC)}.`;
+
+  if (!tslActive && eslActive && !esl.triggered)
+    return `🛡️  PROTECTED — ESL never hit. Position may still be open at ATH ${fmt.mc(athMC)}. (TSL disabled)`;
+
+  if (eslActive && esl.triggered) {
+    const g = pct(entryMC, athMC);
+    const huntedNote = g > 0
+      ? ` Price went on to reach ${fmt.mc(athMC)} (+${g.toFixed(0)}% from entry) but you were no longer in the trade.`
+      : '';
+    return `🔴 HUNTED — ESL hit at ${fmt.mc(esl.mc)} [${fmt.ts(esl.ts)}].${huntedNote} Review SL placement relative to key lows.`;
   }
-  if (tsl.triggered && !esl.triggered) {
-    return `📍 TRAILING SL EXECUTED — TSL closed position at ${fmt.mc(tsl.mc)} [${fmt.ts(tsl.ts)}]. Locked in partial gains from ATH.`;
-  }
-  if (esl.triggered && pct(entryMC, athMC) > 80) {
-    return `⚠️  HUNTED THEN RECOVERED — ESL hit at ${fmt.mc(esl.mc)}, but ATH reached ${fmt.mc(athMC)} later. SL placement may have been too tight relative to support.`;
-  }
-  if (esl.triggered) {
-    return `🔴 ENTRY SL HIT — Position closed at ${fmt.mc(esl.mc)} [${fmt.ts(esl.ts)}]. Below entry. Review risk-reward and entry structure.`;
-  }
+
   return `📋 MIXED — Review SL events in detail above.`;
 }
 
-function evalTPLogic(entryMC, athMC, tpLevels, tpHits, rawTpHits, exitTs, esl, tsl, pullbacks) {
-  const hitCount    = Object.keys(tpHits).length;
-  const rawHitCount = Object.keys(rawTpHits).length;
+function evalTPLogic(entryMC, athMC, tpLevels, tpHits, esl, tsl, pullbacks) {
+  const hitCount = Object.keys(tpHits).length;
   const g = pct(entryMC, athMC);
   const lines = [`Entry ${fmt.mc(entryMC)} → ATH ${fmt.mc(athMC)} (${fmt.pct(g)}).`];
 
-  // Helper: find the last pullback that completed before a given timestamp
+  // Helper: last pullback that completed before a given timestamp
   function lastPBBefore(ts) {
     let last = null;
     for (let p = 0; p < pullbacks.length; p++) {
@@ -788,70 +805,84 @@ function evalTPLogic(entryMC, athMC, tpLevels, tpHits, rawTpHits, exitTs, esl, t
     return last;
   }
 
-  // SL label helper
-  const slLabel = (esl.triggered && tsl.triggered)
-    ? 'ESL + TSL'
-    : esl.triggered ? 'ESL' : tsl.triggered ? 'TSL' : null;
-
-  if (hitCount === 0 && rawHitCount === 0) {
-    lines.push(`No TP levels were reached by price at any point.`);
-    if (exitTs && slLabel) {
-      lines.push(`${slLabel} closed the trade at [${fmt.ts(exitTs)}] before any TP target was reachable.`);
-    } else if (!exitTs) {
-      lines.push(`Peak gain was below TP1 threshold (${tpLevels[0]}%). No SL triggered — position may still be open.`);
+  if (hitCount === 0) {
+    lines.push(`No TP levels were reached by price.`);
+    const anySlHit = (!esl.disabled && esl.triggered) || (!tsl.disabled && tsl.triggered);
+    if (!anySlHit) {
+      lines.push(`Peak gain was below TP1 threshold (${tpLevels[0]}%). No SL hit — position may still be open.`);
+    } else {
+      if (!esl.disabled && esl.triggered) lines.push(`ESL hit at [${fmt.ts(esl.ts)}] before any TP was reached.`);
+      if (!tsl.disabled && tsl.triggered) lines.push(`TSL hit at [${fmt.ts(tsl.ts)}] before any TP was reached.`);
     }
     return lines.join(' ');
   }
 
-  if (hitCount > 0) {
-    const hitDetails = Object.keys(tpHits).map(i => {
-      const h = tpHits[+i];
-      const pb = lastPBBefore(h.ts);
-      const pbContext = pb ? `after PB${pb}` : `before first pullback`;
-      return `TP${+i + 1} (${tpLevels[+i]}%) — hit at [${fmt.ts(h.ts)}], ${pbContext}, SL had not yet triggered`;
-    });
-    lines.push(`Levels reached while in trade: ${hitDetails.join('; ')}.`);
-  }
+  // For each hit TP, explain the context under each SL scenario independently
+  const hitDetails = Object.keys(tpHits).map(i => {
+    const h = tpHits[+i];
+    const pb = lastPBBefore(h.ts);
+    const pbCtx = pb ? `after PB${pb}` : `before first pullback`;
 
-  const missedKeys = Object.keys(rawTpHits).filter(i => !tpHits[i]);
-  if (missedKeys.length > 0) {
-    const missedDetails = missedKeys.map(i => {
-      const rh = rawTpHits[+i];
-      return `TP${+i + 1} (${tpLevels[+i]}%) at [${fmt.ts(rh.ts)}]`;
-    });
-    lines.push(
-      `Price rose to reach ${missedDetails.join(', ')} AFTER the ${slLabel} had already closed the trade` +
-      ` at [${fmt.ts(exitTs)}] — these levels were hit but gains were not captured.`
-    );
-  }
+    const eslCtx = esl.disabled
+      ? `ESL disabled`
+      : !esl.triggered
+        ? `ESL never hit`
+        : esl.ts > h.ts
+          ? `ESL hit later [${fmt.ts(esl.ts)}]`
+          : `ESL had already hit [${fmt.ts(esl.ts)}] — not captured in ESL scenario`;
 
-  const neverHit = tpLevels.length - rawHitCount;
+    const tslCtx = tsl.disabled
+      ? `TSL disabled`
+      : !tsl.triggered
+        ? `TSL never hit`
+        : tsl.ts > h.ts
+          ? `TSL hit later [${fmt.ts(tsl.ts)}]`
+          : `TSL had already hit [${fmt.ts(tsl.ts)}] — not captured in TSL scenario`;
+
+    return `TP${+i + 1} (${tpLevels[+i]}%) hit [${fmt.ts(h.ts)}], ${pbCtx} — ${eslCtx}; ${tslCtx}`;
+  });
+
+  lines.push(hitDetails.join('. ') + '.');
+
+  const neverHit = tpLevels.length - hitCount;
   if (neverHit > 0) {
-    lines.push(`${neverHit} level${neverHit > 1 ? 's' : ''} never reached by price at any point.`);
+    lines.push(`${neverHit} level${neverHit > 1 ? 's' : ''} never reached by price.`);
   }
 
   return lines.join(' ');
 }
 
 function postTradeVerdict(entryMC, athMC, esl, tsl, terminalMC, tpHits, tpLevels) {
-  const gain      = pct(entryMC, athMC);
-  const termGain  = pct(entryMC, terminalMC);
-  const tpCount   = Object.keys(tpHits).length;
+  const gain     = pct(entryMC, athMC);
+  const termGain = pct(entryMC, terminalMC);
+  const tpCount  = Object.keys(tpHits).length;
+
+  // Find the earliest TP timestamp (if any TP was hit by price)
+  const firstTPTs = tpCount > 0
+    ? Math.min(...Object.values(tpHits).map(h => h.ts))
+    : null;
+
+  // Was any SL hit before the first TP? If so it's a loss regardless of ATH.
+  const eslBeforeTP = !esl.disabled && esl.triggered && (!firstTPTs || esl.ts <= firstTPTs);
+  const tslBeforeTP = !tsl.disabled && tsl.triggered && (!firstTPTs || tsl.ts <= firstTPTs);
+  const slHitBeforeTP = eslBeforeTP || tslBeforeTP;
 
   let verdict;
-  if      (gain >= 400) verdict = '🏆 EXCEPTIONAL';
-  else if (gain >= 200) verdict = '🟢 STRONG';
-  else if (gain >= 100) verdict = '✅ GOOD';
-  else if (gain >= 50)  verdict = '🟡 MODERATE';
-  else if (gain >= 0)   verdict = '⚠️  MARGINAL';
-  else                  verdict = '🔴 FAILED';
+  if (slHitBeforeTP) {
+    verdict = '🔴 LOSS';
+  } else if (gain >= 400) verdict = '🏆 EXCEPTIONAL';
+  else if (gain >= 200)   verdict = '🟢 STRONG';
+  else if (gain >= 100)   verdict = '✅ GOOD';
+  else if (gain >= 50)    verdict = '🟡 MODERATE';
+  else if (gain >= 0)     verdict = '⚠️  MARGINAL';
+  else                    verdict = '🔴 FAILED';
 
   const parts = [];
-  if (tpCount > 0) parts.push(`${tpCount}/${tpLevels.length} TPs hit`);
-  if (esl.triggered && tsl.triggered) parts.push('ESL + TSL both triggered');
-  else if (esl.triggered)  parts.push('ESL triggered — position stopped out');
-  else if (tsl.triggered)  parts.push(`TSL closed at ${fmt.mc(tsl.mc)}`);
-  else                     parts.push('no SL triggers — may still be open');
+  if (tpCount > 0) parts.push(`${tpCount}/${tpLevels.length} TPs reached by price`);
+  if (!esl.disabled && esl.triggered && !tsl.disabled && tsl.triggered) parts.push('ESL hit · TSL hit');
+  else if (!esl.disabled && esl.triggered) parts.push('ESL hit');
+  else if (!tsl.disabled && tsl.triggered) parts.push(`TSL hit at ${fmt.mc(tsl.mc)}`);
+  else parts.push('no SL hit — may still be open');
 
   return (
     `${verdict} — ${parts.join(', ')}. ` +
@@ -879,7 +910,7 @@ function finalLesson(esl, tsl, entryMC, athMC, pullbacks) {
 // BRIEFING GENERATOR
 // ──────────────────────────────────────────────
 function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tpLevels, setupNotes,
-                             esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits, rawTpHits, exitTs,
+                             esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits,
                              terminalMC, terminalTs, preNote, candleCount }) {
   const now   = new Date();
   const nowTs = Math.floor(now.getTime() / 1000);
@@ -889,13 +920,13 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
   const pbField = (n, field) => {
     const pb = pullbacks[n - 1];
     if (!pb) return 'N/A';
-    const eslHit = pb.lowMC <= eslTrigger;
-    const tslTrigger = tsl.highest * (1 - trailSLPct / 100);
-    const tslHit = pb.lowMC <= tslTrigger;
-    if (field === 'drop')    return fmt.pct(pb.dropPct);
-    if (field === 'low')     return `${fmt.mc(pb.lowMC)} [${fmt.ts(pb.lowTs)}]`;
-    if (field === 'esl')     return eslHit ? '❌ SL HIT'   : '✅ SAFE';
-    if (field === 'tsl')     return tslHit ? '❌ SL HIT'   : '✅ SAFE';
+    const eslHit = !esl.disabled && pb.lowMC <= eslTrigger;
+    const tslTrigger = tsl.disabled ? -Infinity : tsl.highest * (1 - trailSLPct / 100);
+    const tslHit = !tsl.disabled && pb.lowMC <= tslTrigger;
+    if (field === 'drop') return fmt.pct(pb.dropPct);
+    if (field === 'low')  return `${fmt.mc(pb.lowMC)} [${fmt.ts(pb.lowTs)}]`;
+    if (field === 'esl')  return esl.disabled ? '— Disabled' : eslHit ? '❌ SL HIT' : '✅ SAFE';
+    if (field === 'tsl')  return tsl.disabled ? '— Disabled' : tslHit ? '❌ SL HIT' : '✅ SAFE';
   };
 
   // ── Post-PB3 volatility ──
@@ -911,44 +942,55 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
   }
 
   // ── TP lines ──
-  // Three states:
-  //   ✅ HIT       — price reached target while you were still in the trade
-  //   ⚠️  MISSED   — price reached target AFTER SL already closed the trade
-  //   ❌ NOT HIT   — price never reached target at all
+  // ESL and TSL are independent parallel simulations.
+  // Each TP shows: whether price reached it, and — separately —
+  // whether you were still in the trade under each SL scenario.
+  //
+  // Second line indented 30 chars to align under the value column.
   const tpLine = (i, pctVal) => {
-    const h    = tpHits[i];
-    const rawH = rawTpHits[i];
+    const h      = tpHits[i];
     const target = entryMC * (1 + pctVal / 100);
 
-    if (h) {
-      // Find last pullback that completed before this TP hit
-      let lastPB = null;
-      for (let p = 0; p < pullbacks.length; p++) {
-        if (pullbacks[p].lowTs < h.ts) lastPB = p + 1;
-      }
-      const pbTag = lastPB ? ` · after PB${lastPB}` : ` · before first pullback`;
-      return `${pctVal}%  ✅ HIT @ ${fmt.mc(h.mc)} [${fmt.ts(h.ts)}]${pbTag} · SL not yet triggered`;
+    if (!h) {
+      return `${pctVal}%  ❌ NOT HIT — Price never reached target ${fmt.mc(target)}`;
     }
 
-    if (rawH) {
-      // Price got there but only after the trade was closed by SL
-      const slLabel = (esl.triggered && tsl.triggered)
-        ? 'ESL + TSL'
-        : esl.triggered ? 'ESL' : 'TSL';
-      return (
-        `${pctVal}%  ⚠️  MISSED — ${slLabel} closed trade at [${fmt.ts(exitTs)}]. ` +
-        `Price did reach ${fmt.mc(rawH.mc)} at [${fmt.ts(rawH.ts)}] but you were no longer in the trade.`
-      );
+    // Price was hit — find which pullback (if any) preceded it
+    let lastPB = null;
+    for (let p = 0; p < pullbacks.length; p++) {
+      if (pullbacks[p].lowTs < h.ts) lastPB = p + 1;
+    }
+    const pbTag = lastPB ? `after PB${lastPB}` : `before first pullback`;
+
+    // ESL scenario — independent
+    let eslStatus;
+    if (esl.disabled) {
+      eslStatus = `ESL: — disabled`;
+    } else if (!esl.triggered) {
+      eslStatus = `ESL: ✅ safe (never hit)`;
+    } else if (esl.ts > h.ts) {
+      eslStatus = `ESL: ✅ in trade — hit later [${fmt.ts(esl.ts)}]`;
+    } else {
+      eslStatus = `ESL: ⚠️ already hit [${fmt.ts(esl.ts)}] — not captured`;
     }
 
-    // Price never reached target at all
-    if (exitTs) {
-      const slLabel = (esl.triggered && tsl.triggered)
-        ? 'ESL + TSL'
-        : esl.triggered ? 'ESL' : 'TSL';
-      return `${pctVal}%  ❌ NOT HIT — ${slLabel} closed trade at [${fmt.ts(exitTs)}] before target ${fmt.mc(target)} was ever reached`;
+    // TSL scenario — independent
+    let tslStatus;
+    if (tsl.disabled) {
+      tslStatus = `TSL: — disabled`;
+    } else if (!tsl.triggered) {
+      tslStatus = `TSL: ✅ safe (never hit)`;
+    } else if (tsl.ts > h.ts) {
+      tslStatus = `TSL: ✅ in trade — hit later [${fmt.ts(tsl.ts)}]`;
+    } else {
+      tslStatus = `TSL: ⚠️ already hit [${fmt.ts(tsl.ts)}] — not captured`;
     }
-    return `${pctVal}%  ❌ NOT HIT — Price never reached target ${fmt.mc(target)}`;
+
+    const indent = '\n                              ';
+    return (
+      `${pctVal}%  ✅ HIT @ ${fmt.mc(h.mc)} [${fmt.ts(h.ts)}] · ${pbTag}` +
+      `${indent}${eslStatus}  |  ${tslStatus}`
+    );
   };
 
   return `
@@ -964,8 +1006,8 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
 ━━━━━━━━━━━━━━━━━  PARAMETERS  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Entry MC                 : ${fmt.mc(entryMC)}
-  Entry SL %               : ${entrySLPct}%  →  Floor: ${fmt.mc(eslTrigger)}
-  Trailing SL %            : ${trailSLPct}%  below running ATH
+  Entry SL %               : ${esl.disabled ? 'Disabled' : `${entrySLPct}%  (${fmt.mc(eslTrigger)})`}
+  Trailing SL %            : ${tsl.disabled ? 'Disabled' : `${trailSLPct}%  below running ATH`}
   TP1 %                    : ${tpLine(0, tpLevels[0])}
   TP2 %                    : ${tpLine(1, tpLevels[1])}
   TP3 %                    : ${tpLine(2, tpLevels[2])}
@@ -1004,11 +1046,11 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
 
   The Setup                : ${setupNotes || 'Not provided.'}
 
-  Floor & Entry            : ${evalFloor(entryMC, pullbacks)}
+  Identified Floor         : ${pullbacks.length ? fmt.mc(pullbacks[0].lowMC) : 'N/A'}
 
   SL Logic                 : ${evalSLLogic(esl, tsl, entryMC, athMC)}
 
-  TP Logic                 : ${evalTPLogic(entryMC, athMC, tpLevels, tpHits, rawTpHits, exitTs, esl, tsl, pullbacks)}
+  TP Logic                 : ${evalTPLogic(entryMC, athMC, tpLevels, tpHits, esl, tsl, pullbacks)}
 
   Post-Trade Verdict       : ${postTradeVerdict(entryMC, athMC, esl, tsl, terminalMC, tpHits, tpLevels)}
 
@@ -1048,8 +1090,11 @@ async function runAudit() {
     const entryTimeStr = document.getElementById('entryTime').value;
     const entryMCraw   = document.getElementById('entryMC').value;
     const supplyRaw    = document.getElementById('totalSupply').value;
-    const entrySLPct   = parseFloat(document.getElementById('entrySL').value) || 37;
-    const trailSLPct   = parseFloat(document.getElementById('trailSL').value) || 37;
+    // 0 = user explicitly disabled that SL. NaN (blank) = fall back to default 37.
+    const entrySLRaw = parseFloat(document.getElementById('entrySL').value);
+    const trailSLRaw = parseFloat(document.getElementById('trailSL').value);
+    const entrySLPct = isNaN(entrySLRaw) ? 37 : entrySLRaw;
+    const trailSLPct = isNaN(trailSLRaw) ? 37 : trailSLRaw;
     const tpLevels = [
       parseFloat(document.getElementById('tp1').value) || 50,
       parseFloat(document.getElementById('tp2').value) || 127,
@@ -1130,30 +1175,11 @@ async function runAudit() {
     const { esl, tsl } = runSLSimulation(mcCandles, entryMC, entrySLPct, trailSLPct);
 
     // ─ Milestones & TPs ─
+    // ESL and TSL are independent parallel simulations — both run through
+    // the full candle history. TP status is evaluated against each SL
+    // separately in the briefing; there is no single combined exit point.
     setProgress(78, 'Tracking milestones and TP levels…');
     const { milestones, tpHits } = trackMilestonesAndTPs(mcCandles, entryMC, tpLevels);
-
-    // ─ Invalidate TPs that occur after the trade was stopped out ─
-    // If a stop-loss fires, the position is closed at that moment.
-    // Any TP level the price "hit" after that point is irrelevant —
-    // you were no longer in the trade.
-    // rawTpHits preserves every price touch before filtering, so the
-    // briefing can show whether a missed TP was "never reached" vs
-    // "reached after SL already closed the trade".
-    const rawTpHits = Object.assign({}, tpHits);
-
-    const exitTs = (() => {
-      let t = null;
-      if (esl.triggered) t = esl.ts;
-      if (tsl.triggered && (t === null || tsl.ts < t)) t = tsl.ts;
-      return t;
-    })();
-
-    if (exitTs !== null) {
-      for (const key of Object.keys(tpHits)) {
-        if (tpHits[key].ts > exitTs) delete tpHits[key];
-      }
-    }
 
     // ─ Pullbacks ─
     setProgress(83, 'Detecting pullback cycles…');
@@ -1174,7 +1200,7 @@ async function runAudit() {
 
     const briefing = generateBriefing({
       entryTs, entryMC, supply, entrySLPct, trailSLPct, tpLevels, setupNotes,
-      esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits, rawTpHits, exitTs,
+      esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits,
       terminalMC, terminalTs, preNote, candleCount: mcCandles.length
     });
 
@@ -1202,11 +1228,11 @@ async function runAudit() {
         </div>
         <div class="m-card">
           <div class="ml">Entry SL</div>
-          <div class="mv ${esl.triggered ? 'red' : 'green'}">${esl.triggered ? 'SL HIT' : 'SAFE'}</div>
+          <div class="mv ${esl.disabled ? '' : esl.triggered ? 'red' : 'green'}">${esl.disabled ? 'NONE' : esl.triggered ? 'SL HIT' : 'SAFE'}</div>
         </div>
         <div class="m-card">
           <div class="ml">Trailing SL</div>
-          <div class="mv ${tsl.triggered ? 'red' : 'green'}">${tsl.triggered ? 'SL HIT' : 'SAFE'}</div>
+          <div class="mv ${tsl.disabled ? '' : tsl.triggered ? 'red' : 'green'}">${tsl.disabled ? 'NONE' : tsl.triggered ? 'SL HIT' : 'SAFE'}</div>
         </div>
         <div class="m-card">
           <div class="ml">Cycles</div>
