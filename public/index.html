@@ -773,17 +773,64 @@ function evalSLLogic(esl, tsl, entryMC, athMC) {
   return `📋 MIXED — Review SL events in detail above.`;
 }
 
-function evalTPLogic(entryMC, athMC, tpLevels, tpHits) {
-  const hitCount = Object.keys(tpHits).length;
+function evalTPLogic(entryMC, athMC, tpLevels, tpHits, rawTpHits, exitTs, esl, tsl, pullbacks) {
+  const hitCount    = Object.keys(tpHits).length;
+  const rawHitCount = Object.keys(rawTpHits).length;
   const g = pct(entryMC, athMC);
-  const athFormatted = fmt.mc(athMC);
-  const gFormatted = fmt.pct(g);
+  const lines = [`Entry ${fmt.mc(entryMC)} → ATH ${fmt.mc(athMC)} (${fmt.pct(g)}).`];
 
-  if (hitCount === 0) {
-    return `Entry ${fmt.mc(entryMC)} → ATH ${athFormatted} (${gFormatted}). No TP levels reached. Peak gain was below TP1 threshold (${tpLevels[0]}%).`;
+  // Helper: find the last pullback that completed before a given timestamp
+  function lastPBBefore(ts) {
+    let last = null;
+    for (let p = 0; p < pullbacks.length; p++) {
+      if (pullbacks[p].lowTs < ts) last = p + 1;
+    }
+    return last;
   }
-  const hitLabels = Object.keys(tpHits).map(i => `TP${+i + 1} (${tpLevels[+i]}%)`).join(', ');
-  return `Entry ${fmt.mc(entryMC)} → ATH ${athFormatted} (${gFormatted}). Levels hit: ${hitLabels} of ${tpLevels.length} targets.`;
+
+  // SL label helper
+  const slLabel = (esl.triggered && tsl.triggered)
+    ? 'ESL + TSL'
+    : esl.triggered ? 'ESL' : tsl.triggered ? 'TSL' : null;
+
+  if (hitCount === 0 && rawHitCount === 0) {
+    lines.push(`No TP levels were reached by price at any point.`);
+    if (exitTs && slLabel) {
+      lines.push(`${slLabel} closed the trade at [${fmt.ts(exitTs)}] before any TP target was reachable.`);
+    } else if (!exitTs) {
+      lines.push(`Peak gain was below TP1 threshold (${tpLevels[0]}%). No SL triggered — position may still be open.`);
+    }
+    return lines.join(' ');
+  }
+
+  if (hitCount > 0) {
+    const hitDetails = Object.keys(tpHits).map(i => {
+      const h = tpHits[+i];
+      const pb = lastPBBefore(h.ts);
+      const pbContext = pb ? `after PB${pb}` : `before first pullback`;
+      return `TP${+i + 1} (${tpLevels[+i]}%) — hit at [${fmt.ts(h.ts)}], ${pbContext}, SL had not yet triggered`;
+    });
+    lines.push(`Levels reached while in trade: ${hitDetails.join('; ')}.`);
+  }
+
+  const missedKeys = Object.keys(rawTpHits).filter(i => !tpHits[i]);
+  if (missedKeys.length > 0) {
+    const missedDetails = missedKeys.map(i => {
+      const rh = rawTpHits[+i];
+      return `TP${+i + 1} (${tpLevels[+i]}%) at [${fmt.ts(rh.ts)}]`;
+    });
+    lines.push(
+      `Price rose to reach ${missedDetails.join(', ')} AFTER the ${slLabel} had already closed the trade` +
+      ` at [${fmt.ts(exitTs)}] — these levels were hit but gains were not captured.`
+    );
+  }
+
+  const neverHit = tpLevels.length - rawHitCount;
+  if (neverHit > 0) {
+    lines.push(`${neverHit} level${neverHit > 1 ? 's' : ''} never reached by price at any point.`);
+  }
+
+  return lines.join(' ');
 }
 
 function postTradeVerdict(entryMC, athMC, esl, tsl, terminalMC, tpHits, tpLevels) {
@@ -832,7 +879,7 @@ function finalLesson(esl, tsl, entryMC, athMC, pullbacks) {
 // BRIEFING GENERATOR
 // ──────────────────────────────────────────────
 function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tpLevels, setupNotes,
-                             esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits,
+                             esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits, rawTpHits, exitTs,
                              terminalMC, terminalTs, preNote, candleCount }) {
   const now   = new Date();
   const nowTs = Math.floor(now.getTime() / 1000);
@@ -864,12 +911,44 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
   }
 
   // ── TP lines ──
+  // Three states:
+  //   ✅ HIT       — price reached target while you were still in the trade
+  //   ⚠️  MISSED   — price reached target AFTER SL already closed the trade
+  //   ❌ NOT HIT   — price never reached target at all
   const tpLine = (i, pctVal) => {
-    const h = tpHits[i];
+    const h    = tpHits[i];
+    const rawH = rawTpHits[i];
     const target = entryMC * (1 + pctVal / 100);
-    return h
-      ? `${pctVal}%  ✅ HIT @ ${fmt.mc(h.mc)} [${fmt.ts(h.ts)}]`
-      : `${pctVal}%  ❌ NOT HIT — Target: ${fmt.mc(target)}`;
+
+    if (h) {
+      // Find last pullback that completed before this TP hit
+      let lastPB = null;
+      for (let p = 0; p < pullbacks.length; p++) {
+        if (pullbacks[p].lowTs < h.ts) lastPB = p + 1;
+      }
+      const pbTag = lastPB ? ` · after PB${lastPB}` : ` · before first pullback`;
+      return `${pctVal}%  ✅ HIT @ ${fmt.mc(h.mc)} [${fmt.ts(h.ts)}]${pbTag} · SL not yet triggered`;
+    }
+
+    if (rawH) {
+      // Price got there but only after the trade was closed by SL
+      const slLabel = (esl.triggered && tsl.triggered)
+        ? 'ESL + TSL'
+        : esl.triggered ? 'ESL' : 'TSL';
+      return (
+        `${pctVal}%  ⚠️  MISSED — ${slLabel} closed trade at [${fmt.ts(exitTs)}]. ` +
+        `Price did reach ${fmt.mc(rawH.mc)} at [${fmt.ts(rawH.ts)}] but you were no longer in the trade.`
+      );
+    }
+
+    // Price never reached target at all
+    if (exitTs) {
+      const slLabel = (esl.triggered && tsl.triggered)
+        ? 'ESL + TSL'
+        : esl.triggered ? 'ESL' : 'TSL';
+      return `${pctVal}%  ❌ NOT HIT — ${slLabel} closed trade at [${fmt.ts(exitTs)}] before target ${fmt.mc(target)} was ever reached`;
+    }
+    return `${pctVal}%  ❌ NOT HIT — Price never reached target ${fmt.mc(target)}`;
   };
 
   return `
@@ -929,7 +1008,7 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
 
   SL Logic                 : ${evalSLLogic(esl, tsl, entryMC, athMC)}
 
-  TP Logic                 : ${evalTPLogic(entryMC, athMC, tpLevels, tpHits)}
+  TP Logic                 : ${evalTPLogic(entryMC, athMC, tpLevels, tpHits, rawTpHits, exitTs, esl, tsl, pullbacks)}
 
   Post-Trade Verdict       : ${postTradeVerdict(entryMC, athMC, esl, tsl, terminalMC, tpHits, tpLevels)}
 
@@ -1058,6 +1137,11 @@ async function runAudit() {
     // If a stop-loss fires, the position is closed at that moment.
     // Any TP level the price "hit" after that point is irrelevant —
     // you were no longer in the trade.
+    // rawTpHits preserves every price touch before filtering, so the
+    // briefing can show whether a missed TP was "never reached" vs
+    // "reached after SL already closed the trade".
+    const rawTpHits = Object.assign({}, tpHits);
+
     const exitTs = (() => {
       let t = null;
       if (esl.triggered) t = esl.ts;
@@ -1090,7 +1174,7 @@ async function runAudit() {
 
     const briefing = generateBriefing({
       entryTs, entryMC, supply, entrySLPct, trailSLPct, tpLevels, setupNotes,
-      esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits,
+      esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits, rawTpHits, exitTs,
       terminalMC, terminalTs, preNote, candleCount: mcCandles.length
     });
 
