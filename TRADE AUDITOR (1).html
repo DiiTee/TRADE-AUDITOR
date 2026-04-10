@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trade Auditor — Crypto Chart Analysis Engine</title>
+<style>
+:root {
+  --bg-main: #0a0e27;
+  --bg-card: #131837;
+  --bg-input: #1a1f3a;
+  --accent-cyan: #00d4ff;
+  --accent-green: #00ff88;
+  --accent-red: #ff4757;
+  --text-primary: #e8eaf6;
+  --text-secondary: #9fa8da;
+  --text-muted: #5c6bc0;
+  --border: #283593;
+  --glow: rgba(0,212,255,0.25);
+  --glow-green: rgba(0,255,136,0.2);
+  --gradient: linear-gradient(135deg, #00d4ff, #00ff88);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  font-family: 'Courier New', Courier, monospace;
+  background-image:
+    linear-gradient(rgba(0,212,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,0.025) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* ── HEADER ── */
+.header {
+  display: flex; align-items: center; gap: 18px;
+  padding: 16px 28px;
+  background: rgba(13,17,40,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+.logo {
+  font-size: 20px; font-weight: 800; letter-spacing: 4px;
+  background: var(--gradient); -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent; background-clip: text;
+}
+.logo-sub { font-size: 9px; letter-spacing: 4px; color: var(--text-muted); text-transform: uppercase; margin-top: 2px; }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.pill {
+  padding: 5px 14px; border-radius: 20px; font-size: 10px;
+  letter-spacing: 2px; text-transform: uppercase;
+  border: 1px solid var(--border); color: var(--text-muted);
+  transition: all 0.3s;
+}
+.pill.active { border-color: var(--accent-cyan); color: var(--accent-cyan); box-shadow: 0 0 14px var(--glow); }
+.pill.error  { border-color: var(--accent-red);  color: var(--accent-red);  box-shadow: 0 0 14px rgba(255,71,87,0.25); }
+.pill.done   { border-color: var(--accent-green); color: var(--accent-green); box-shadow: 0 0 14px var(--glow-green); }
+
+/* ── LAYOUT ── */
+.main {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  grid-template-rows: 1fr;
+  height: calc(100vh - 61px);
+  overflow: hidden;
+}
+
+/* ── INPUT PANEL ── */
+.input-panel {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px;
+  background: rgba(19,24,55,0.5);
+  display: flex; flex-direction: column; gap: 0;
+  min-height: 0;
+}
+.section-label {
+  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--text-muted); padding: 6px 0 8px;
+  border-bottom: 1px solid var(--border); margin-bottom: 12px;
+  margin-top: 16px;
+}
+.section-label:first-child { margin-top: 0; }
+
+.field { margin-bottom: 12px; }
+.field label {
+  display: block; font-size: 10px; letter-spacing: 1.5px;
+  color: var(--text-secondary); margin-bottom: 5px; text-transform: uppercase;
+}
+.field input, .field textarea, .field select {
+  width: 100%; background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 6px; padding: 9px 12px; color: var(--text-primary);
+  font-family: inherit; font-size: 12px; outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.field input:focus, .field textarea:focus {
+  border-color: var(--accent-cyan); box-shadow: 0 0 0 2px var(--glow);
+}
+.field .hint { font-size: 10px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+/* Toggle */
+.toggle-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;
+}
+.toggle { position: relative; width: 40px; height: 20px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.tslider {
+  position: absolute; inset: 0; background: #1e2448;
+  border-radius: 20px; cursor: pointer;
+  border: 1px solid var(--border); transition: 0.3s;
+}
+.tslider:before {
+  content: ''; position: absolute;
+  height: 14px; width: 14px; left: 2px; bottom: 2px;
+  background: var(--text-muted); border-radius: 50%; transition: 0.3s;
+}
+.toggle input:checked + .tslider { background: rgba(0,212,255,0.15); border-color: var(--accent-cyan); }
+.toggle input:checked + .tslider:before { transform: translateX(20px); background: var(--accent-cyan); }
+.toggle-info { flex: 1; }
+.toggle-info .ti-title { font-size: 11px; color: var(--text-primary); }
+.toggle-info .ti-sub { font-size: 9px; color: var(--text-muted); margin-top: 2px; letter-spacing: 1px; }
+
+.hidden { display: none !important; }
+
+/* Audit Button */
+.audit-btn {
+  width: 100%; padding: 13px; margin-top: 12px;
+  background: var(--gradient); border: none; border-radius: 8px;
+  font-family: inherit; font-size: 12px; font-weight: 800;
+  letter-spacing: 4px; text-transform: uppercase;
+  color: #07091e; cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  position: relative; overflow: hidden;
+}
+.audit-btn:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 10px 28px rgba(0,212,255,0.35); }
+.audit-btn:active { transform: translateY(0); }
+.audit-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+.audit-btn .btn-shimmer {
+  position: absolute; top: 0; left: -100%; width: 60%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  animation: shimmer 2s infinite;
+}
+@keyframes shimmer { to { left: 200%; } }
+
+/* ── OUTPUT PANEL ── */
+.output-panel { overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; min-height: 0; height: 100%; }
+
+/* Empty state */
+.empty-state {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 20px; color: var(--text-muted); text-align: center; padding: 60px 20px;
+}
+.empty-hex {
+  font-size: 64px; opacity: 0.1;
+  animation: spin-hex 12s linear infinite;
+}
+@keyframes spin-hex { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.empty-title { font-size: 11px; letter-spacing: 4px; text-transform: uppercase; }
+.empty-desc { font-size: 11px; color: var(--text-muted); line-height: 1.8; max-width: 320px; opacity: 0.6; }
+
+/* Progress */
+.progress-block { display: flex; flex-direction: column; gap: 8px; }
+.progress-bar { height: 2px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--gradient); width: 0%; transition: width 0.4s ease; border-radius: 2px; }
+.progress-msg { font-size: 10px; color: var(--text-muted); letter-spacing: 1px; }
+
+/* Output header */
+.out-header { display: flex; align-items: center; justify-content: space-between; }
+.out-title { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--text-muted); }
+.copy-btn {
+  padding: 7px 16px; background: transparent; border: 1px solid var(--accent-cyan);
+  border-radius: 5px; color: var(--accent-cyan); font-family: inherit;
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; transition: all 0.2s;
+}
+.copy-btn:hover { background: rgba(0,212,255,0.1); box-shadow: 0 0 12px var(--glow); }
+
+/* Metrics grid */
+.metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.m-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 14px;
+}
+.m-card .ml { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+.m-card .mv { font-size: 17px; font-weight: 800; color: var(--accent-cyan); }
+.m-card .mv.green { color: var(--accent-green); }
+.m-card .mv.red { color: var(--accent-red); }
+.m-card .mv.small { font-size: 13px; }
+
+/* Briefing card */
+.briefing-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.briefing-header {
+  background: var(--bg-input); border-bottom: 1px solid var(--border);
+  padding: 12px 18px; display: flex; align-items: center; gap: 10px;
+}
+.dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan);
+  animation: blink 2.5s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.briefing-label { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--text-secondary); }
+.briefing-pre {
+  padding: 20px; font-family: 'Courier New', monospace; font-size: 11.5px;
+  line-height: 1.85; color: var(--text-primary);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: none;
+  overflow-y: visible;
+}
+
+/* Error card */
+.err-card {
+  background: rgba(255,71,87,0.07); border: 1px solid rgba(255,71,87,0.3);
+  border-radius: 8px; padding: 16px 20px; font-size: 12px;
+  line-height: 1.75; color: #ff8090;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: var(--bg-main); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Desktop: prevent body from scrolling so panels handle their own scroll */
+@media (min-width: 861px) {
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .main {
+    height: calc(100vh - 61px);
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .output-panel {
+    height: 100%;
+    overflow-y: auto;
+  }
+}
+
+/* Responsive */
+@media (max-width: 860px) {
+  .main { grid-template-columns: 1fr; height: auto; }
+  .input-panel { border-right: none; border-bottom: 1px solid var(--border); }
+  .output-panel { height: auto; min-height: 70vh; overflow-y: visible; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div>
+    <div class="logo">⬡ TRADE AUDITOR</div>
+    <div class="logo-sub">Crypto Chart Analysis Engine · v1.0</div>
+  </div>
+  <div class="header-right">
+    <div class="pill" id="statusPill">STANDBY</div>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- ══════════════ INPUT PANEL ══════════════ -->
+  <div class="input-panel">
+
+    <div class="section-label">▸ Token Identifier</div>
+
+    <div class="field">
+      <label>Pool / Mint Address</label>
+      <input type="text" id="poolAddress" placeholder="Token contract, Raydium or Pumpswap pool address" />
+      <div class="hint">Paste the token contract address <strong>or</strong> pool address — Raydium &amp; Pumpswap supported. Pre-grad → enable toggle below &amp; use mint address.</div>
+    </div>
+
+    <!-- Pre-grad toggle -->
+    <div class="toggle-row">
+      <label class="toggle">
+        <input type="checkbox" id="preGradToggle" />
+        <span class="tslider"></span>
+      </label>
+      <div class="toggle-info">
+        <div class="ti-title">PUMP.FUN PRE-GRADUATION</div>
+        <div class="ti-sub">Uses Moralis Solana API · bonding curve data</div>
+      </div>
+    </div>
+
+    <div id="moralisSection" class="hidden">
+      <div class="field">
+        <label>Moralis API Key</label>
+        <input type="password" id="moralisKey" placeholder="Enter Moralis API key" />
+        <div class="hint">Required for pre-graduation Pump.fun OHLCV data.</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>GeckoTerminal API Key <span style="color:var(--text-muted);font-weight:normal">(optional but recommended)</span></label>
+      <input type="password" id="gtApiKey" placeholder="Paste your free GeckoTerminal API key" />
+      <div class="hint">Prevents rate-limit errors (403). Get a free key at <strong>geckoterminal.com/developers</strong> → Demo key.</div>
+    </div>
+
+    <div class="section-label">▸ Entry Parameters</div>
+
+    <div class="field">
+      <label>Entry Time (your local time → treated as UTC)</label>
+      <input type="datetime-local" id="entryTime" />
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Entry MC ($)</label>
+        <input type="number" id="entryMC" placeholder="e.g. 150000" min="0" />
+      </div>
+      <div class="field">
+        <label>Total Supply (optional)</label>
+        <input type="number" id="totalSupply" placeholder="Default: 1,000,000,000" min="1" />
+        <div class="hint">Leave blank for 1B default</div>
+      </div>
+    </div>
+
+    <div class="section-label">▸ Stop Loss Configuration</div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Entry SL %</label>
+        <input type="number" id="entrySL" value="37" min="1" max="99" step="0.5" />
+        <div class="hint">% drop from entry MC</div>
+      </div>
+      <div class="field">
+        <label>Trailing SL %</label>
+        <input type="number" id="trailSL" value="37" min="1" max="99" step="0.5" />
+        <div class="hint">% drop from ATH</div>
+      </div>
+    </div>
+
+    <div class="section-label">▸ Take Profit Levels</div>
+
+    <div class="row2">
+      <div class="field">
+        <label>TP1 %</label>
+        <input type="number" id="tp1" value="50" min="1" />
+      </div>
+      <div class="field">
+        <label>TP2 %</label>
+        <input type="number" id="tp2" value="127" min="1" />
+      </div>
+    </div>
+    <div class="row3">
+      <div class="field">
+        <label>TP3 %</label>
+        <input type="number" id="tp3" value="297" min="1" />
+      </div>
+      <div class="field">
+        <label>TP4 %</label>
+        <input type="number" id="tp4" value="397" min="1" />
+      </div>
+      <div class="field">
+        <label>TP5 %</label>
+        <input type="number" id="tp5" value="497" min="1" />
+      </div>
+    </div>
+
+    <div class="section-label">▸ Trade Context (optional)</div>
+
+    <div class="field">
+      <label>Setup Notes — Why did you enter?</label>
+      <textarea id="setupNotes" rows="3" style="resize:vertical"
+        placeholder="e.g. Breakout from shelf, re-test of support, volume surge..."></textarea>
+    </div>
+
+    <button class="audit-btn" id="auditBtn" onclick="runAudit()">
+      <span class="btn-shimmer"></span>
+      ⬡ &nbsp;RUN AUDIT
+    </button>
+
+  </div><!-- /input-panel -->
+
+  <!-- ══════════════ OUTPUT PANEL ══════════════ -->
+  <div class="output-panel" id="outputPanel">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-hex">⬡</div>
+      <div class="empty-title">Awaiting Audit</div>
+      <div class="empty-desc">
+        Enter your pool address, entry parameters, and SL/TP levels,<br/>
+        then click RUN AUDIT to generate a full trade briefing.
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- ══════════════════════════════════════════════════
+  JAVASCRIPT ENGINE
+══════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ──────────────────────────────────────────────
+// TOGGLE MORALIS SECTION
+// ──────────────────────────────────────────────
+document.getElementById('preGradToggle').addEventListener('change', function () {
+  document.getElementById('moralisSection').classList.toggle('hidden', !this.checked);
+});
+
+// ──────────────────────────────────────────────
+// UTILITY FUNCTIONS
+// ──────────────────────────────────────────────
+const fmt = {
+  mc(v) {
+    if (v == null || isNaN(v)) return 'N/A';
+    if (v >= 1e9) return '$' + (v / 1e9).toFixed(3) + 'B';
+    if (v >= 1e6) return '$' + (v / 1e6).toFixed(3) + 'M';
+    if (v >= 1e3) return '$' + (v / 1e3).toFixed(2) + 'K';
+    return '$' + v.toFixed(2);
+  },
+  pct(v) {
+    if (v == null || isNaN(v)) return 'N/A';
+    return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  },
+  ts(unix) {
+    if (!unix) return 'N/A';
+    return new Date(unix * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+  },
+  tsLong(unix) {
+    if (!unix) return 'N/A';
+    return new Date(unix * 1000).toUTCString();
+  },
+  dateOnly(unix) {
+    return new Date(unix * 1000).toUTCString().split(' ').slice(0, 4).join(' ');
+  }
+};
+
+function pct(from, to) {
+  if (!from || from === 0) return 0;
+  return ((to - from) / from) * 100;
+}
+
+function setStatus(text, cls = '') {
+  const p = document.getElementById('statusPill');
+  p.textContent = text;
+  p.className = 'pill' + (cls ? ' ' + cls : '');
+}
+
+let _progressFill, _progressMsg;
+
+function setProgress(n, msg) {
+  if (_progressFill) _progressFill.style.width = n + '%';
+  if (_progressMsg) _progressMsg.textContent = '▸ ' + msg;
+}
+
+// ──────────────────────────────────────────────
+// CORS-AWARE FETCH
+// When opened as a local file (file://) browsers block cross-origin requests.
+// Route through a public CORS proxy automatically in that case.
+// ──────────────────────────────────────────────
+const CORS_PROXIES = [
+  url => `https://corsproxy.io/?${url}`,
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
+
+async function apiFetch(url, options = {}) {
+  // Try direct first — works on proper servers with CORS allowed
+  try {
+    const r = await fetch(url, options);
+    // If blocked (403/429), fall through to proxies instead of returning the error
+    if (r.status !== 403 && r.status !== 429) return r;
+  } catch (_) {
+    // Network/CORS error — fall through to proxies
+  }
+
+  // Proxy fallback — for file://, rate-limited IPs, or CORS-blocked origins
+  const noHeaders = { method: options.method || 'GET' };
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const r = await fetch(proxy(url), noHeaders);
+      // Accept valid responses; skip 403/429 (still blocked) and try next proxy
+      if (r.ok || (r.status >= 400 && r.status < 500 && r.status !== 403 && r.status !== 429)) return r;
+    } catch (_) {}
+    try {
+      const r = await fetch(proxy(url), options);
+      if (r.ok || (r.status >= 400 && r.status < 500 && r.status !== 403 && r.status !== 429)) return r;
+    } catch (_) {}
+  }
+
+  throw new Error(
+    'Could not reach the API — all connection attempts failed.\n' +
+    'If running as a local file, serve it via a quick local server instead:\n' +
+    '  Windows: python -m http.server 8080  (then open http://localhost:8080)\n' +
+    '  Mac/Linux: python3 -m http.server 8080'
+  );
+}
+
+// ──────────────────────────────────────────────
+// API  — GECKOTERMINAL
+// ──────────────────────────────────────────────
+const GT = 'https://api.geckoterminal.com/api/v2';
+// Headers are built dynamically so an API key entered at runtime is included
+function geckoHdr() {
+  const key = (document.getElementById('gtApiKey') || {}).value || '';
+  const h = { 'Accept': 'application/json;version=20230302' };
+  if (key) h['x-cg-demo-api-key'] = key.trim();
+  return h;
+}
+
+async function gtPoolInfo(addr) {
+  const r = await apiFetch(`${GT}/networks/solana/pools/${addr}`, { headers: geckoHdr() });
+  if (!r.ok) throw new Error(`GeckoTerminal pool fetch failed (${r.status}). Confirm this is a valid pool or token address.`);
+  const d = await r.json();
+  return d.data;
+}
+
+async function gtResolveToPool(addr) {
+  // First try the address directly as a pool
+  const poolR = await apiFetch(`${GT}/networks/solana/pools/${addr}`, { headers: GECKO_HDR });
+  if (poolR.ok) return addr; // It's already a valid pool address
+
+  // Otherwise treat it as a token/contract address and find its top pool
+  setProgress(6, 'Address looks like a token contract — looking up its pool…');
+  const tokenR = await apiFetch(`${GT}/networks/solana/tokens/${addr}/pools?page=1`, { headers: GECKO_HDR });
+  if (!tokenR.ok) {
+    throw new Error(
+      `Could not find a pool for this address (${tokenR.status}).\n` +
+      '• Enter the token contract address (mint) or a Raydium/Pumpswap pool address.\n' +
+      '• For pre-grad Pump.fun tokens: enable the Pump.fun toggle.'
+    );
+  }
+  const td = await tokenR.json();
+  const pools = td.data;
+  if (!pools || pools.length === 0) {
+    throw new Error(
+      'No pools found for this token on GeckoTerminal.\n' +
+      '• If the token migrated to Pumpswap, try pasting the Pumpswap pool address directly.\n' +
+      '• Very new migrations may not be indexed yet — check back in a few minutes.'
+    );
+  }
+  // Pick the pool with the highest liquidity (first result is typically best)
+  const p = pools[0];
+  const dexName = (p.relationships && p.relationships.dex && p.relationships.dex.data && p.relationships.dex.data.id) || 'DEX';
+  setProgress(7, `Found ${dexName} pool — fetching OHLCV…`);
+  // Use attributes.address if available, otherwise strip network prefix from id
+  return (p.attributes && p.attributes.address) ? p.attributes.address : p.id.replace(/^solana_/, '');
+}
+
+async function gtOHLCV(addr, beforeTs) {
+  let url = `${GT}/networks/solana/pools/${addr}/ohlcv/minute?aggregate=1&limit=1000`;
+  if (beforeTs) url += `&before_timestamp=${beforeTs}`;
+  const r = await apiFetch(url, { headers: GECKO_HDR });
+  if (!r.ok) throw new Error(`GeckoTerminal OHLCV fetch failed (${r.status}).`);
+  const d = await r.json();
+  return (d.data && d.data.attributes && d.data.attributes.ohlcv_list) || [];
+}
+
+/**
+ * Fetch enough pages so we have data back to at least (entryTs - 120 min).
+ * GeckoTerminal returns candles in DESCENDING order.
+ * Each candle: [timestamp, open, high, low, close, volume]
+ */
+async function fetchAllGT(addr, entryTs) {
+  let all = [];
+  let beforeTs = null;
+  const TARGET = entryTs - 7200; // 2 h before entry for pre-entry PB note
+
+  for (let page = 0; page < 25; page++) {
+    setProgress(10 + page * 3, `Fetching OHLCV page ${page + 1}…`);
+    const batch = await gtOHLCV(addr, beforeTs);
+    if (!batch || batch.length === 0) break;
+
+    // Deduplicate before adding
+    const tsSeen = new Set(all.map(c => c[0]));
+    const fresh = batch.filter(c => !tsSeen.has(c[0]));
+    all = all.concat(fresh);
+
+    const earliest = Math.min(...batch.map(c => c[0]));
+    if (earliest <= TARGET) break;
+
+    beforeTs = earliest - 1;
+    await new Promise(r => setTimeout(r, 350)); // polite rate limit
+  }
+
+  all.sort((a, b) => a[0] - b[0]);
+  return all;
+}
+
+// ──────────────────────────────────────────────
+// API  — MORALIS (Pre-Graduation)
+// ──────────────────────────────────────────────
+async function fetchMoralis(mint, apiKey, entryTs) {
+  // Moralis Solana OHLCV endpoint
+  const url = `https://solana-gateway.moralis.io/token/mainnet/${mint}/ohlcv?timeframe=1min&limit=1000`;
+  const r = await apiFetch(url, {
+    headers: { 'X-API-Key': apiKey, 'Accept': 'application/json' }
+  });
+  if (!r.ok) {
+    const msg = await r.text().catch(() => '');
+    throw new Error(`Moralis API error (${r.status}): ${msg || 'Check API key and mint address.'}`);
+  }
+  const d = await r.json();
+  const results = d.result || d.data || [];
+  const candles = results.map(c => {
+    const ts = typeof c.timestamp === 'number'
+      ? Math.floor(c.timestamp / 1000) // ms → s
+      : Math.floor(new Date(c.timestamp).getTime() / 1000);
+    return [ts, +c.open, +c.high, +c.low, +c.close, +c.volume];
+  });
+  candles.sort((a, b) => a[0] - b[0]);
+  return candles;
+}
+
+// ──────────────────────────────────────────────
+// MC CONVERSION
+// ──────────────────────────────────────────────
+function toMC(price, supply) { return price * supply; }
+
+// ──────────────────────────────────────────────
+// PULLBACK DETECTION  (Zigzag + fallback)
+// ──────────────────────────────────────────────
+function detectPullbacks(candles, entryMC) {
+  const MIN_SWING = 0.18; // 18% move to confirm a pivot
+  const pullbacks = [];
+
+  if (candles.length < 4) return pullbacks;
+
+  // ─ Zigzag algorithm ─
+  let dir = 'up';
+  let pivotPrice = entryMC;
+  let pivotTs = candles[0].ts;
+  const zz = []; // { type:'high'|'low', mc, ts }
+
+  for (const c of candles) {
+    if (dir === 'up') {
+      if (c.high > pivotPrice) { pivotPrice = c.high; pivotTs = c.ts; }
+      else if (pivotPrice > 0 && c.low < pivotPrice * (1 - MIN_SWING)) {
+        zz.push({ type: 'high', mc: pivotPrice, ts: pivotTs });
+        dir = 'down'; pivotPrice = c.low; pivotTs = c.ts;
+      }
+    } else {
+      if (c.low < pivotPrice) { pivotPrice = c.low; pivotTs = c.ts; }
+      else if (pivotPrice > 0 && c.high > pivotPrice * (1 + MIN_SWING)) {
+        zz.push({ type: 'low', mc: pivotPrice, ts: pivotTs });
+        dir = 'up'; pivotPrice = c.high; pivotTs = c.ts;
+      }
+    }
+  }
+  // Add terminal point
+  const last = candles[candles.length - 1];
+  if (dir === 'up') zz.push({ type: 'high', mc: pivotPrice, ts: pivotTs });
+  else zz.push({ type: 'low', mc: pivotPrice, ts: pivotTs });
+
+  // Extract high→low pairs
+  for (let i = 0; i < zz.length - 1; i++) {
+    if (zz[i].type === 'high' && zz[i + 1].type === 'low') {
+      const dropPct = pct(zz[i].mc, zz[i + 1].mc);
+      if (dropPct < -10) { // at least 10% drop
+        pullbacks.push({
+          peakMC: zz[i].mc, peakTs: zz[i].ts,
+          lowMC: zz[i + 1].mc, lowTs: zz[i + 1].ts,
+          dropPct
+        });
+      }
+    }
+  }
+
+  // Fallback: rolling window if zigzag found nothing
+  if (pullbacks.length === 0) {
+    const W = Math.max(6, Math.floor(candles.length / 15));
+    let from = 0;
+    while (from < candles.length - W && pullbacks.length < 10) {
+      let peakMC = 0, peakTs = candles[from].ts, peakIdx = from;
+      for (let j = from; j < Math.min(from + W * 3, candles.length); j++) {
+        if (candles[j].high > peakMC) { peakMC = candles[j].high; peakTs = candles[j].ts; peakIdx = j; }
+      }
+      let lowMC = Infinity, lowTs = peakTs;
+      for (let j = peakIdx + 1; j < Math.min(peakIdx + W * 3, candles.length); j++) {
+        if (candles[j].low < lowMC) { lowMC = candles[j].low; lowTs = candles[j].ts; }
+      }
+      const dp = pct(peakMC, lowMC);
+      if (dp < -15 && peakMC > entryMC * 0.5) {
+        pullbacks.push({ peakMC, peakTs, lowMC, lowTs, dropPct: dp });
+        from = candles.findIndex(c => c.ts >= lowTs) + 1;
+      } else {
+        from = peakIdx + 1;
+      }
+    }
+  }
+
+  return pullbacks.slice(0, 12);
+}
+
+// ──────────────────────────────────────────────
+// CYCLE COUNTING
+// ──────────────────────────────────────────────
+function countCycles(candles, entryMC) {
+  let cycles = 1;
+  let prevHigh = entryMC;
+  let runHigh = entryMC;
+  let inPullback = false;
+  let pullbackPeak = entryMC;
+
+  for (const c of candles) {
+    if (c.high > runHigh) runHigh = c.high;
+    if (!inPullback) {
+      if (runHigh > 0 && c.low < runHigh * 0.80) {
+        inPullback = true; pullbackPeak = runHigh;
+      }
+    } else {
+      if (c.high > prevHigh) {
+        cycles++; prevHigh = runHigh;
+        inPullback = false; runHigh = c.high;
+      }
+    }
+  }
+  return cycles;
+}
+
+// ──────────────────────────────────────────────
+// PARALLEL SL SIMULATION
+// ──────────────────────────────────────────────
+function runSLSimulation(candles, entryMC, entrySLPct, trailSLPct) {
+  const eslTrigger = entryMC * (1 - entrySLPct / 100);
+  let esl = { triggered: false, ts: null, mc: null, trigger: eslTrigger };
+  let tsl = { triggered: false, ts: null, mc: null, highest: entryMC, highestTs: null };
+
+  for (const c of candles) {
+    // Update TSL highest
+    if (c.high > tsl.highest) { tsl.highest = c.high; tsl.highestTs = c.ts; }
+
+    // ESL check — use LOW wick
+    if (!esl.triggered && c.low <= eslTrigger) {
+      esl.triggered = true; esl.ts = c.ts; esl.mc = c.low;
+    }
+
+    // TSL check — use LOW wick
+    if (!tsl.triggered) {
+      const tslTrigger = tsl.highest * (1 - trailSLPct / 100);
+      if (c.low <= tslTrigger) {
+        tsl.triggered = true; tsl.ts = c.ts; tsl.mc = c.low; tsl.finalTrigger = tslTrigger;
+      }
+    }
+  }
+  return { esl, tsl };
+}
+
+// ──────────────────────────────────────────────
+// MILESTONE & TP TRACKING
+// ──────────────────────────────────────────────
+function trackMilestonesAndTPs(candles, entryMC, tpLevels) {
+  const milestones = {};   // key: 50 | 100 | 200
+  const tpHits = {};       // key: index 0-4
+
+  for (const c of candles) {
+    [50, 100, 200].forEach(m => {
+      if (!milestones[m] && c.high >= entryMC * (1 + m / 100)) {
+        milestones[m] = { ts: c.ts, mc: c.high };
+      }
+    });
+    tpLevels.forEach((tp, i) => {
+      if (!tpHits[i] && c.high >= entryMC * (1 + tp / 100)) {
+        tpHits[i] = { ts: c.ts, mc: c.high };
+      }
+    });
+  }
+  return { milestones, tpHits };
+}
+
+// ──────────────────────────────────────────────
+// PRE-ENTRY PULLBACK NOTE
+// ──────────────────────────────────────────────
+function preEntryNote(preCandles, entryMC, supply) {
+  if (preCandles.length === 0) return 'No pre-entry OHLCV data available in current window.';
+  const prices = preCandles.map(c => ({ h: toMC(c[2], supply), l: toMC(c[3], supply) }));
+  const preHigh = Math.max(...prices.map(p => p.h));
+  const preLow  = Math.min(...prices.map(p => p.l));
+  const fromHigh = pct(preHigh, entryMC);
+  const fromLow  = pct(preLow, entryMC);
+  const period   = preCandles.length;
+  return (
+    `Pre-entry range (${period} candles): High ${fmt.mc(preHigh)} → Low ${fmt.mc(preLow)}. ` +
+    `Entry was ${fmt.pct(fromHigh)} from pre-entry high, ${fmt.pct(fromLow)} from pre-entry low. ` +
+    (fromHigh <= -15
+      ? `Entry came after a notable ${fmt.pct(fromHigh)} pullback from the pre-entry peak — potential discount entry.`
+      : `Entry was relatively close to recent high — momentum chasing or breakout play.`)
+  );
+}
+
+// ──────────────────────────────────────────────
+// EVALUATION HELPERS
+// ──────────────────────────────────────────────
+function evalEntry(entryMC, athMC, esl, tsl) {
+  const g = pct(entryMC, athMC);
+  let ev = '';
+  if      (g >= 300) ev = '✅ EXCEPTIONAL — Price 4x+ from entry. Excellent timing.';
+  else if (g >= 100) ev = '✅ STRONG — Significant multi-bag captured post-entry.';
+  else if (g >= 50)  ev = '✅ VALID — Solid upside captured. At least 1.5x reached.';
+  else if (g >= 0)   ev = '⚠️  MARGINAL — Limited upside. Review entry timing / catalyst.';
+  else               ev = '❌ POOR — Price moved against entry immediately.';
+
+  if (esl.triggered && tsl.triggered) ev += ' Both SLs were triggered during the trade.';
+  else if (esl.triggered)  ev += ' Entry SL was hit — position stopped out at a loss.';
+  else if (tsl.triggered)  ev += ' Trailing SL closed the trade above entry SL floor.';
+  else                     ev += ' No SL triggers detected — position may still be open.';
+  return ev;
+}
+
+function evalFloor(entryMC, pullbacks) {
+  if (pullbacks.length === 0) return 'Insufficient pullback data for floor analysis.';
+  const pb1Low = pullbacks[0].lowMC;
+  const d = pct(pb1Low, entryMC);
+  if (Math.abs(d) <= 8) return `🔒 SHELF — Entry (${fmt.mc(entryMC)}) was near PB1 low (${fmt.mc(pb1Low)}). Strong structural support beneath entry.`;
+  if (d > 8)  return `🌬️  AIR — Entry was ${fmt.pct(d)} above PB1 low. No immediate shelf — gap risk was present.`;
+  return `📐 NEAR SUPPORT — Entry was ${fmt.pct(d)} above PB1 low. Acceptable proximity to structure.`;
+}
+
+function evalSLLogic(esl, tsl, entryMC, athMC) {
+  if (!esl.triggered && !tsl.triggered) {
+    return `🛡️  PROTECTED — Neither SL triggered. Full ride to ATH ${fmt.mc(athMC)} was possible with TSL discipline.`;
+  }
+  if (tsl.triggered && !esl.triggered) {
+    return `📍 TRAILING SL EXECUTED — TSL closed position at ${fmt.mc(tsl.mc)} [${fmt.ts(tsl.ts)}]. Locked in partial gains from ATH.`;
+  }
+  if (esl.triggered && pct(entryMC, athMC) > 80) {
+    return `⚠️  HUNTED THEN RECOVERED — ESL hit at ${fmt.mc(esl.mc)}, but ATH reached ${fmt.mc(athMC)} later. SL placement may have been too tight relative to support.`;
+  }
+  if (esl.triggered) {
+    return `🔴 ENTRY SL HIT — Position closed at ${fmt.mc(esl.mc)} [${fmt.ts(esl.ts)}]. Below entry. Review risk-reward and entry structure.`;
+  }
+  return `📋 MIXED — Review SL events in detail above.`;
+}
+
+function evalTPLogic(entryMC, athMC, tpLevels, tpHits) {
+  const hitCount = Object.keys(tpHits).length;
+  const g = pct(entryMC, athMC);
+  const athFormatted = fmt.mc(athMC);
+  const gFormatted = fmt.pct(g);
+
+  if (hitCount === 0) {
+    return `Entry ${fmt.mc(entryMC)} → ATH ${athFormatted} (${gFormatted}). No TP levels reached. Peak gain was below TP1 threshold (${tpLevels[0]}%).`;
+  }
+  const hitLabels = Object.keys(tpHits).map(i => `TP${+i + 1} (${tpLevels[+i]}%)`).join(', ');
+  return `Entry ${fmt.mc(entryMC)} → ATH ${athFormatted} (${gFormatted}). Levels hit: ${hitLabels} of ${tpLevels.length} targets.`;
+}
+
+function postTradeVerdict(entryMC, athMC, esl, tsl, terminalMC, tpHits, tpLevels) {
+  const gain      = pct(entryMC, athMC);
+  const termGain  = pct(entryMC, terminalMC);
+  const tpCount   = Object.keys(tpHits).length;
+
+  let verdict;
+  if      (gain >= 400) verdict = '🏆 EXCEPTIONAL';
+  else if (gain >= 200) verdict = '🟢 STRONG';
+  else if (gain >= 100) verdict = '✅ GOOD';
+  else if (gain >= 50)  verdict = '🟡 MODERATE';
+  else if (gain >= 0)   verdict = '⚠️  MARGINAL';
+  else                  verdict = '🔴 FAILED';
+
+  const parts = [];
+  if (tpCount > 0) parts.push(`${tpCount}/${tpLevels.length} TPs hit`);
+  if (esl.triggered && tsl.triggered) parts.push('ESL + TSL both triggered');
+  else if (esl.triggered)  parts.push('ESL triggered — position stopped out');
+  else if (tsl.triggered)  parts.push(`TSL closed at ${fmt.mc(tsl.mc)}`);
+  else                     parts.push('no SL triggers — may still be open');
+
+  return (
+    `${verdict} — ${parts.join(', ')}. ` +
+    `Peak: ${fmt.mc(athMC)} (+${gain.toFixed(0)}% from entry). ` +
+    `Terminal: ${fmt.mc(terminalMC)} (${termGain >= 0 ? '+' : ''}${termGain.toFixed(0)}% from entry).`
+  );
+}
+
+function finalLesson(esl, tsl, entryMC, athMC, pullbacks) {
+  const g = pct(entryMC, athMC);
+  if (!esl.triggered && !tsl.triggered && g > 150)
+    return 'Patience + TSL discipline compound exponentially — the biggest gains come from surviving the dips.';
+  if (!esl.triggered && !tsl.triggered && g > 0)
+    return 'Solid structure with no SL hits; optimize TP placement to capture more of the next similar setup.';
+  if (esl.triggered && g > 100)
+    return 'Stop was too tight — the pattern worked but you were shaken out; re-evaluate SL placement relative to key lows.';
+  if (tsl.triggered && g > 0)
+    return 'Trailing SL did its job; the key is setting the % wide enough to survive normal volatility without giving back all gains.';
+  if (g < 0)
+    return 'Entry was too early or into resistance; wait for confirmed structure before committing size.';
+  return 'Every loss is data — document the invalidation point and refine your entry criteria for the next trade.';
+}
+
+// ──────────────────────────────────────────────
+// BRIEFING GENERATOR
+// ──────────────────────────────────────────────
+function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tpLevels, setupNotes,
+                             esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits,
+                             terminalMC, terminalTs, preNote, candleCount }) {
+  const now   = new Date();
+  const nowTs = Math.floor(now.getTime() / 1000);
+  const eslTrigger = entryMC * (1 - entrySLPct / 100);
+
+  // ── Pullback helpers ──
+  const pbField = (n, field) => {
+    const pb = pullbacks[n - 1];
+    if (!pb) return 'N/A';
+    const eslHit = pb.lowMC <= eslTrigger;
+    const tslTrigger = tsl.highest * (1 - trailSLPct / 100);
+    const tslHit = pb.lowMC <= tslTrigger;
+    if (field === 'drop')    return fmt.pct(pb.dropPct);
+    if (field === 'low')     return `${fmt.mc(pb.lowMC)} [${fmt.ts(pb.lowTs)}]`;
+    if (field === 'esl')     return eslHit ? '❌ TRIGGERED' : '✅ SAFE';
+    if (field === 'tsl')     return tslHit ? '❌ TRIGGERED' : '✅ SAFE';
+  };
+
+  // ── Post-PB3 volatility ──
+  let postPb3;
+  if (pullbacks.length === 0) {
+    postPb3 = 'No pullbacks detected.';
+  } else if (pullbacks.length <= 3) {
+    postPb3 = 'No further significant pullbacks before Terminal Floor.';
+  } else {
+    postPb3 = pullbacks.slice(3).map((pb, i) =>
+      `PB${i + 4}: ${fmt.pct(pb.dropPct)} drop → Low ${fmt.mc(pb.lowMC)} [${fmt.ts(pb.lowTs)}]`
+    ).join('\n                           ');
+  }
+
+  // ── TP lines ──
+  const tpLine = (i, pctVal) => {
+    const h = tpHits[i];
+    const target = entryMC * (1 + pctVal / 100);
+    return h
+      ? `${pctVal}%  ✅ HIT @ ${fmt.mc(h.mc)} [${fmt.ts(h.ts)}]`
+      : `${pctVal}%  ❌ NOT HIT — Target: ${fmt.mc(target)}`;
+  };
+
+  return `
+╔══════════════════════════════════════════════════════════════════╗
+║                  ⬡  TRADE AUDIT BRIEFING                         ║
+╚══════════════════════════════════════════════════════════════════╝
+
+  Entry Date               : ${fmt.dateOnly(entryTs)}
+  Entry Time               : ${fmt.tsLong(entryTs)}
+  Date (Audit)             : ${fmt.dateOnly(nowTs)}
+  Time (Audit)             : ${fmt.tsLong(nowTs)}
+
+━━━━━━━━━━━━━━━━━  PARAMETERS  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Entry MC                 : ${fmt.mc(entryMC)}
+  Entry SL %               : ${entrySLPct}%  →  Floor: ${fmt.mc(eslTrigger)}
+  Trailing SL %            : ${trailSLPct}%  below running ATH
+  TP1 %                    : ${tpLine(0, tpLevels[0])}
+  TP2 %                    : ${tpLine(1, tpLevels[1])}
+  TP3 %                    : ${tpLine(2, tpLevels[2])}
+  TP4 %                    : ${tpLine(3, tpLevels[3])}
+  TP5 %                    : ${tpLine(4, tpLevels[4])}
+
+━━━━━━━━━━━━━━━━━  PRICE ACTION  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Peak MC (ATH)            : ${fmt.mc(athMC)} [${fmt.ts(athTs)}]
+
+  PB1 — Drop %             : ${pbField(1, 'drop')}
+  PB1 — Low MC             : ${pbField(1, 'low')}
+  PB1 — ESL Result         : ${pbField(1, 'esl')}
+  PB1 — TSL Result         : ${pbField(1, 'tsl')}
+
+  PB2 — Drop %             : ${pbField(2, 'drop')}
+  PB2 — Low MC             : ${pbField(2, 'low')}
+  PB2 — ESL Result         : ${pbField(2, 'esl')}
+  PB2 — TSL Result         : ${pbField(2, 'tsl')}
+
+  PB3 — Drop %             : ${pbField(3, 'drop')}
+  PB3 — Low MC             : ${pbField(3, 'low')}
+  PB3 — ESL Result         : ${pbField(3, 'esl')}
+  PB3 — TSL Result         : ${pbField(3, 'tsl')}
+
+  Post-PB3 Volatility      : ${postPb3}
+
+  Terminal Floor           : ${fmt.mc(terminalMC)} [${fmt.ts(terminalTs)}]
+  Cycle Count              : ${cycles}
+
+━━━━━━━━━━━━━━━━━  AUDIT NOTES  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Pre-Entry Pullback Note  : ${preNote}
+
+  Entry Checker Evaluation : ${evalEntry(entryMC, athMC, esl, tsl)}
+
+  The Setup                : ${setupNotes || 'Not provided.'}
+
+  Floor & Entry            : ${evalFloor(entryMC, pullbacks)}
+
+  SL Logic                 : ${evalSLLogic(esl, tsl, entryMC, athMC)}
+
+  TP Logic                 : ${evalTPLogic(entryMC, athMC, tpLevels, tpHits)}
+
+  Post-Trade Verdict       : ${postTradeVerdict(entryMC, athMC, esl, tsl, terminalMC, tpHits, tpLevels)}
+
+  Final Lesson             : ${finalLesson(esl, tsl, entryMC, athMC, pullbacks)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ${candleCount} × 1-min candles  |  Supply: ${supply.toLocaleString()}
+  Trade Auditor v1.0  |  ${new Date().toUTCString()}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`.trim();
+}
+
+// ──────────────────────────────────────────────
+// MAIN AUDIT RUNNER
+// ──────────────────────────────────────────────
+async function runAudit() {
+  const btn = document.getElementById('auditBtn');
+  btn.disabled = true;
+  setStatus('SCANNING', 'active');
+
+  const op = document.getElementById('outputPanel');
+  op.innerHTML = `
+    <div class="out-header">
+      <div class="out-title">▸ Audit in progress</div>
+    </div>
+    <div class="progress-block">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-msg" id="progressMsg">▸ Initializing…</div>
+    </div>`;
+  _progressFill = document.getElementById('progressFill');
+  _progressMsg  = document.getElementById('progressMsg');
+
+  try {
+    // ─ Read inputs ─
+    const poolAddress  = document.getElementById('poolAddress').value.trim();
+    const preGrad      = document.getElementById('preGradToggle').checked;
+    const moralisKey   = document.getElementById('moralisKey').value.trim();
+    const entryTimeStr = document.getElementById('entryTime').value;
+    const entryMCraw   = document.getElementById('entryMC').value;
+    const supplyRaw    = document.getElementById('totalSupply').value;
+    const entrySLPct   = parseFloat(document.getElementById('entrySL').value) || 37;
+    const trailSLPct   = parseFloat(document.getElementById('trailSL').value) || 37;
+    const tpLevels = [
+      parseFloat(document.getElementById('tp1').value) || 50,
+      parseFloat(document.getElementById('tp2').value) || 127,
+      parseFloat(document.getElementById('tp3').value) || 297,
+      parseFloat(document.getElementById('tp4').value) || 397,
+      parseFloat(document.getElementById('tp5').value) || 497,
+    ];
+    const setupNotes = document.getElementById('setupNotes').value.trim();
+
+    // ─ Validate ─
+    if (!poolAddress)    throw new Error('Please enter a Pool or Mint address.');
+    if (!entryTimeStr)   throw new Error('Please enter an Entry Time.');
+    if (!entryMCraw || isNaN(+entryMCraw)) throw new Error('Please enter a valid Entry MC value.');
+    if (preGrad && !moralisKey)  throw new Error('Moralis API key is required for pre-graduation mode.');
+
+    const entryMC  = parseFloat(entryMCraw);
+    const supply   = supplyRaw ? parseFloat(supplyRaw) : 1_000_000_000;
+    const entryTs  = Math.floor(new Date(entryTimeStr).getTime() / 1000);
+
+    if (isNaN(entryTs)) throw new Error('Entry Time is invalid. Please use the datetime picker.');
+
+    // ─ Fetch OHLCV ─
+    setProgress(5, 'Connecting to data source…');
+    let rawCandles;
+
+    if (preGrad) {
+      setProgress(8, 'Fetching Moralis Solana OHLCV…');
+      rawCandles = await fetchMoralis(poolAddress, moralisKey, entryTs);
+    } else {
+      setProgress(5, 'Resolving address (Raydium / Pumpswap)…');
+      const resolvedPool = await gtResolveToPool(poolAddress);
+      if (resolvedPool !== poolAddress) {
+        setProgress(9, `Found pool: ${resolvedPool.slice(0,8)}… — fetching OHLCV…`);
+      } else {
+        setProgress(9, 'Pool confirmed — fetching OHLCV…');
+      }
+      rawCandles = await fetchAllGT(resolvedPool, entryTs);
+    }
+
+    if (!rawCandles || rawCandles.length === 0) {
+      throw new Error(
+        'No OHLCV data returned from the API.\n' +
+        '• Paste the token contract address or the exact pool address (Raydium or Pumpswap both work).\n' +
+        '• Check that the token has sufficient trading history on GeckoTerminal.\n' +
+        '• For pre-grad Pump.fun tokens: enable the Pump.fun toggle and enter the mint address with a Moralis key.'
+      );
+    }
+
+    setProgress(65, `Processing ${rawCandles.length} candles…`);
+
+    // ─ Split pre/post entry ─
+    const preRaw  = rawCandles.filter(c => c[0] < entryTs);
+    const postRaw = rawCandles.filter(c => c[0] >= entryTs);
+
+    if (postRaw.length === 0) {
+      throw new Error(
+        'No candles found at or after the entry time. ' +
+        'Verify your Entry Time is correct and within the data window.'
+      );
+    }
+
+    // ─ Convert raw to MC candles ─
+    const mcCandles = postRaw.map(c => ({
+      ts: c[0],
+      open:  toMC(c[1], supply),
+      high:  toMC(c[2], supply),
+      low:   toMC(c[3], supply),
+      close: toMC(c[4], supply),
+      vol:   c[5]
+    }));
+
+    // ─ ATH ─
+    let athMC = entryMC, athTs = mcCandles[0].ts;
+    for (const c of mcCandles) { if (c.high > athMC) { athMC = c.high; athTs = c.ts; } }
+
+    // ─ SL simulation ─
+    setProgress(72, 'Running parallel SL simulation…');
+    const { esl, tsl } = runSLSimulation(mcCandles, entryMC, entrySLPct, trailSLPct);
+
+    // ─ Milestones & TPs ─
+    setProgress(78, 'Tracking milestones and TP levels…');
+    const { milestones, tpHits } = trackMilestonesAndTPs(mcCandles, entryMC, tpLevels);
+
+    // ─ Pullbacks ─
+    setProgress(83, 'Detecting pullback cycles…');
+    const pullbacks = detectPullbacks(mcCandles, entryMC);
+
+    // ─ Cycles ─
+    const cycles = countCycles(mcCandles, entryMC);
+
+    // ─ Terminal floor ─
+    const lastC = mcCandles[mcCandles.length - 1];
+    const terminalMC = lastC.close;
+    const terminalTs = lastC.ts;
+
+    // ─ Pre-entry note ─
+    const preNote = preEntryNote(preRaw, entryMC, supply);
+
+    setProgress(93, 'Generating briefing…');
+
+    const briefing = generateBriefing({
+      entryTs, entryMC, supply, entrySLPct, trailSLPct, tpLevels, setupNotes,
+      esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits,
+      terminalMC, terminalTs, preNote, candleCount: mcCandles.length
+    });
+
+    setProgress(100, 'Audit complete.');
+    setStatus('COMPLETE', 'done');
+
+    // ─ Render metrics ─
+    const gain = pct(entryMC, athMC);
+    const gainCls = gain >= 0 ? 'green' : 'red';
+
+    op.innerHTML = `
+      <div class="out-header">
+        <div class="out-title">▸ Audit complete &nbsp;·&nbsp; ${mcCandles.length} candles</div>
+        <button class="copy-btn" onclick="copyBriefing()">⎘ &nbsp;COPY BRIEFING</button>
+      </div>
+
+      <div class="metrics">
+        <div class="m-card">
+          <div class="ml">Peak MC (ATH)</div>
+          <div class="mv small">${fmt.mc(athMC)}</div>
+        </div>
+        <div class="m-card">
+          <div class="ml">Max Gain</div>
+          <div class="mv ${gainCls}">${gain >= 0 ? '+' : ''}${gain.toFixed(1)}%</div>
+        </div>
+        <div class="m-card">
+          <div class="ml">Entry SL</div>
+          <div class="mv ${esl.triggered ? 'red' : 'green'}">${esl.triggered ? 'TRIGGERED' : 'SAFE'}</div>
+        </div>
+        <div class="m-card">
+          <div class="ml">Trailing SL</div>
+          <div class="mv ${tsl.triggered ? 'red' : 'green'}">${tsl.triggered ? 'TRIGGERED' : 'SAFE'}</div>
+        </div>
+        <div class="m-card">
+          <div class="ml">Cycles</div>
+          <div class="mv">${cycles}</div>
+        </div>
+        <div class="m-card">
+          <div class="ml">Pullbacks</div>
+          <div class="mv">${pullbacks.length}</div>
+        </div>
+        <div class="m-card">
+          <div class="ml">Terminal Floor</div>
+          <div class="mv small">${fmt.mc(terminalMC)}</div>
+        </div>
+        <div class="m-card">
+          <div class="ml">1-Min Candles</div>
+          <div class="mv">${mcCandles.length.toLocaleString()}</div>
+        </div>
+      </div>
+
+      <div class="briefing-card">
+        <div class="briefing-header">
+          <div class="dot"></div>
+          <span class="briefing-label">Full Audit Briefing</span>
+          <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">
+            ${new Date().toUTCString()}
+          </span>
+        </div>
+        <pre class="briefing-pre" id="briefingPre">${briefing}</pre>
+      </div>
+    `;
+
+    window._lastBriefing = briefing;
+
+  } catch (err) {
+    setStatus('ERROR', 'error');
+    op.innerHTML = `
+      <div class="out-header">
+        <div class="out-title">▸ Audit Failed</div>
+      </div>
+      <div class="err-card">
+        <strong>⚠ Error:</strong><br/><br/>${err.message.replace(/\n/g, '<br/>')}
+        <br/><br/>
+        <span style="color:var(--text-muted);font-size:10px;letter-spacing:1px">
+          TROUBLESHOOTING<br/>
+          • Paste the token contract address <em>or</em> the pool address (Raydium &amp; Pumpswap both work).<br/>
+          • For tokens still on the bonding curve: enable the Pump.fun toggle and enter a Moralis key.<br/>
+          • Very new tokens (&lt;1h old) may not have enough OHLCV history yet.<br/>
+          • Open DevTools (F12) Console for full stack trace.
+        </span>
+      </div>
+    `;
+    console.error('[TradeAuditor]', err);
+  }
+
+  document.getElementById('auditBtn').disabled = false;
+}
+
+// ──────────────────────────────────────────────
+// COPY
+// ──────────────────────────────────────────────
+function copyBriefing() {
+  if (!window._lastBriefing) return;
+  navigator.clipboard.writeText(window._lastBriefing).then(() => {
+    const b = document.querySelector('.copy-btn');
+    if (b) { const o = b.innerHTML; b.textContent = '✓  COPIED!'; setTimeout(() => b.innerHTML = o, 2500); }
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = window._lastBriefing;
+    Object.assign(ta.style, { position: 'fixed', opacity: '0' });
+    document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
+</script>
+</body>
+</html>
