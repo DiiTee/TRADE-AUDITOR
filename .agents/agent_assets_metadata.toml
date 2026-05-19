@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "CgOeV_Kdi4x_Z1uD1KdM3"
+uri = "file://trade-auditor.tar.gz"
+type = "unspecified"
+title = "Trade Auditor — Full Project"
