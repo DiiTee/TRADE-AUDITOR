@@ -781,10 +781,9 @@ function evalFloor(entryMC, pullbacks) {
   return `📐 NEAR SUPPORT — Entry was ${fmt.pct(d)} above PB1 low. Acceptable proximity to structure.`;
 }
 
-function evalFloorEntry(entryMC, pullbacks, athMC, esl, tsl) {
-  if (pullbacks.length === 0) return 'N/A — insufficient pullback data to classify entry vs floor.';
-  const pb1Low = pullbacks[0].lowMC;
-  const d = pct(pb1Low, entryMC); // % entry sits above (or below) PB1 low
+function evalFloorEntry(entryMC, preFloorMC, athMC, esl, tsl) {
+  if (preFloorMC == null) return 'N/A — no pre-entry data available to identify floor.';
+  const d = pct(preFloorMC, entryMC); // % entry sits above (or below) pre-entry floor
   const g = pct(entryMC, athMC);
   const eslActive = !esl.disabled;
   const tslActive = !tsl.disabled;
@@ -795,33 +794,33 @@ function evalFloorEntry(entryMC, pullbacks, athMC, esl, tsl) {
   let label, impact;
 
   if (Math.abs(d) <= 8) {
-    label = `🔒 SHELF — Entry ${fmt.mc(entryMC)} sat right on PB1 support ${fmt.mc(pb1Low)} (${fmt.pct(d)} away).`;
+    label = `🔒 SHELF — Entry ${fmt.mc(entryMC)} sat right on the identified floor ${fmt.mc(preFloorMC)} (${fmt.pct(d)} away).`;
     if (g >= 50 && !eslHit) {
       impact = `Impact: shelf gave the trade room to breathe — early volatility was absorbed by structure and the move developed into a +${g.toFixed(0)}% peak without breaking the floor.`;
     } else if (eslHit) {
-      impact = `Impact: even with shelf backing, ESL still hit at ${fmt.mc(esl.mc)} — the broader structure broke down beneath PB1 support; not an entry-quality issue.`;
+      impact = `Impact: even with shelf backing, ESL still hit at ${fmt.mc(esl.mc)} — the broader structure broke down beneath the pre-entry floor; not an entry-quality issue.`;
     } else if (g > 0) {
       impact = `Impact: structurally sound entry, but the move was modest (+${g.toFixed(0)}% peak) — entry quality was solid; the limiting factor was the move itself, not the floor.`;
     } else {
       impact = `Impact: shelf entry, but price never extended in your favor — entry was structurally clean; thesis or catalyst is the variable to review.`;
     }
   } else if (d > 20) {
-    label = `🌬️  AIR — Entry ${fmt.mc(entryMC)} sat ${fmt.pct(d)} above PB1 low ${fmt.mc(pb1Low)} with no shelf beneath.`;
+    label = `🌬️  AIR — Entry ${fmt.mc(entryMC)} sat ${fmt.pct(d)} above the identified floor ${fmt.mc(preFloorMC)} with no shelf beneath.`;
     if (anyHit && g < 50) {
-      impact = `Impact: air entry directly contributed to the SL risk — the gap to structural support gave price room to fall through your stop. Waiting for a pullback to PB1 support would have offered the same upside with far less downside.`;
+      impact = `Impact: air entry directly contributed to the SL risk — the gap to structural support gave price room to fall through your stop. Waiting for a pullback to the pre-entry floor would have offered the same upside with far less downside.`;
     } else if (anyHit) {
-      impact = `Impact: SL was hit despite a strong move (peak +${g.toFixed(0)}%) — the air entry forced a wide stop that eventually got taken on the retrace; an entry closer to PB1 would have allowed a tighter, structure-anchored stop.`;
+      impact = `Impact: SL was hit despite a strong move (peak +${g.toFixed(0)}%) — the air entry forced a wide stop that eventually got taken on the retrace; an entry closer to the identified floor would have allowed a tighter, structure-anchored stop.`;
     } else if (g >= 50) {
-      impact = `Impact: momentum carried the trade to +${g.toFixed(0)}% despite the air entry, but R/R was unnecessarily exposed — a pullback entry near PB1 would have produced the same outcome with materially less risk.`;
+      impact = `Impact: momentum carried the trade to +${g.toFixed(0)}% despite the air entry, but R/R was unnecessarily exposed — a pullback entry near the pre-entry floor would have produced the same outcome with materially less risk.`;
     } else {
       impact = `Impact: air entry with no upside payoff — exactly the worst-case scenario this entry style invites. Discipline yourself to wait for the pullback to structural support next time.`;
     }
   } else {
-    label = `📐 NEAR SUPPORT — Entry ${fmt.mc(entryMC)} was ${fmt.pct(d)} above PB1 low ${fmt.mc(pb1Low)}. Acceptable proximity to structure.`;
+    label = `📐 NEAR SUPPORT — Entry ${fmt.mc(entryMC)} was ${fmt.pct(d)} above the identified floor ${fmt.mc(preFloorMC)}. Acceptable proximity to structure.`;
     if (g >= 50 && !anyHit) {
       impact = `Impact: close enough to structure that early volatility didn't shake the position — peaked at +${g.toFixed(0)}% cleanly. A shelf entry would have been ideal, but this was a workable compromise.`;
     } else if (anyHit) {
-      impact = `Impact: SL still hit — the modest gap above support widened the effective risk. Scaling in closer to PB1 would have allowed a tighter stop and likely preserved the position.`;
+      impact = `Impact: SL still hit — the modest gap above the floor widened the effective risk. Scaling in closer to the identified floor would have allowed a tighter stop and likely preserved the position.`;
     } else {
       impact = `Impact: structurally acceptable entry; outcome was driven more by the move's range than by entry placement.`;
     }
@@ -1046,10 +1045,10 @@ function postTradeVerdict(entryMC, athMC, esl, tsl, terminalMC, tpHits, tpLevels
   );
 }
 
-function finalLesson(esl, tsl, entryMC, athMC, athTs, pullbacks, tpHits, tpLevels, terminalMC) {
+function finalLesson(esl, tsl, entryMC, athMC, athTs, pullbacks, tpHits, tpLevels, terminalMC, preFloorMC) {
   const totalTPs = tpLevels.length;
   const g = pct(entryMC, athMC);
-  const pb1Low = pullbacks[0] ? pullbacks[0].lowMC : null;
+  const pb1Low = preFloorMC || null;
   const eslActive = !esl.disabled;
   const tslActive = !tsl.disabled;
 
@@ -1118,7 +1117,7 @@ function finalLesson(esl, tsl, entryMC, athMC, athTs, pullbacks, tpHits, tpLevel
           : `Widen ESL slightly or move to break-even after TP${eslCaptured} to avoid getting shaken out before the full move plays out.`;
         lessons.push(`ESL: Hit at ${fmt.mc(esl.mc)} — captured ${eslCaptured}/${totalTPs} TPs first. ${advice}`);
       } else {
-        const ref = pb1Low ? ` Anchor it just below PB1 low (${fmt.mc(pb1Low)}) instead of a fixed % from entry.` : '';
+        const ref = pb1Low ? ` Anchor it just below the identified floor (${fmt.mc(pb1Low)}) instead of a fixed % from entry.` : '';
         lessons.push(`ESL: Hit at ${fmt.mc(esl.mc)} before any TP — too tight for the entry volatility.${ref}`);
       }
     }
@@ -1139,7 +1138,7 @@ function finalLesson(esl, tsl, entryMC, athMC, athTs, pullbacks, tpHits, tpLevel
       } else if (tslCaptured > 0) {
         const advice = lateTSL
           ? `Triggered on the post-peak retrace — locked in gains, but a slightly wider % would have ridden a bigger expansion if one occurred.`
-          : `Triggered mid-trend before the full move played out — % is too tight; widen it to survive normal pullbacks like PB1 (${pb1Low ? fmt.pct(pullbacks[0].dropPct) : 'N/A'}).`;
+          : `Triggered mid-trend before the full move played out — % is too tight; widen it to survive normal pullbacks on this asset class.`;
         lessons.push(`TSL: Hit at ${fmt.mc(tsl.mc)} — captured ${tslCaptured}/${totalTPs} TPs first. ${advice}`);
       } else {
         lessons.push(`TSL: Hit at ${fmt.mc(tsl.mc)} before any TP — % is far too tight to survive normal volatility on this asset class. Widen significantly or rely on ESL until trade is in profit.`);
@@ -1149,13 +1148,13 @@ function finalLesson(esl, tsl, entryMC, athMC, athTs, pullbacks, tpHits, tpLevel
 
   // ─── Entry quality lesson (shelf vs air vs near-support) ───
   if (pb1Low) {
-    const d = pct(pb1Low, entryMC); // % entry sits above PB1 low
+    const d = pct(pb1Low, entryMC); // % entry sits above pre-entry floor
     if (Math.abs(d) <= 8) {
-      lessons.push(`Entry: 🔒 SHELF — sat right above PB1 support (${fmt.mc(pb1Low)}, only ${fmt.pct(d)} away). This is a template entry: structural floor directly beneath gave the position room to breathe with minimal SL risk. Repeat this pattern — wait for price to consolidate near a recent pullback low before entering.`);
+      lessons.push(`Entry: 🔒 SHELF — sat right on the identified floor (${fmt.mc(pb1Low)}, only ${fmt.pct(d)} away). This is a template entry: structural floor directly beneath gave the position room to breathe with minimal SL risk. Repeat this pattern — wait for price to consolidate near the identified floor before entering.`);
     } else if (d > 20) {
-      lessons.push(`Entry: 🌬️  AIR — sat ${fmt.pct(d)} above PB1 low (${fmt.mc(pb1Low)}), with no structural shelf beneath. Air entries amplify SL risk and skew R/R against you; next time, wait for a pullback into structural support before entering rather than chasing extension.`);
+      lessons.push(`Entry: 🌬️  AIR — sat ${fmt.pct(d)} above the identified floor (${fmt.mc(pb1Low)}), with no structural shelf beneath. Air entries amplify SL risk and skew R/R against you; next time, wait for a pullback into the identified floor before entering rather than chasing extension.`);
     } else if (d > 8) {
-      lessons.push(`Entry: 📐 NEAR SUPPORT — ${fmt.pct(d)} above PB1 low (${fmt.mc(pb1Low)}). Acceptable, but scaling in closer to the shelf would have improved R/R and given the SL more room to anchor below structure.`);
+      lessons.push(`Entry: 📐 NEAR SUPPORT — ${fmt.pct(d)} above the identified floor (${fmt.mc(pb1Low)}). Acceptable, but scaling in closer to the floor would have improved R/R and given the SL more room to anchor below structure.`);
     }
   }
 
@@ -1177,7 +1176,7 @@ function finalLesson(esl, tsl, entryMC, athMC, athTs, pullbacks, tpHits, tpLevel
 
   // ─── Suggest enabling an unactivated SL — only if it would have meaningfully helped ───
   if (!eslActive && termVsEntry != null && termVsEntry < -30) {
-    const ref = pb1Low ? ` Anchor it just below PB1 low (${fmt.mc(pb1Low)}).` : '';
+    const ref = pb1Low ? ` Anchor it just below the identified floor (${fmt.mc(pb1Low)}).` : '';
     lessons.push(`Worth considering: an ESL on similar setups — terminal landed ${fmt.pct(termVsEntry)} from entry, a fixed stop would have capped the downside.${ref}`);
   }
   if (!tslActive && termVsAth != null && termVsAth < -50 && g > 50) {
@@ -1192,7 +1191,7 @@ function finalLesson(esl, tsl, entryMC, athMC, athTs, pullbacks, tpHits, tpLevel
 // ──────────────────────────────────────────────
 function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tpLevels, setupNotes,
                              esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits,
-                             terminalMC, terminalTs, preNote, candleCount }) {
+                             terminalMC, terminalTs, preNote, preFloorMC, candleCount }) {
   const now   = new Date();
   const nowTs = Math.floor(now.getTime() / 1000);
   const eslTrigger = entryMC * (1 - entrySLPct / 100);
@@ -1335,13 +1334,11 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
 
   Pre-Entry Pullback Note  : ${preNote}
 
-  Entry Checker Evaluation : ${evalEntry(entryMC, athMC, esl, tsl)}
+  Entry Evaluation         : ${evalEntry(entryMC, athMC, esl, tsl)}
 
-  The Setup                : ${setupNotes || 'Not provided.'}
+  Identified Floor         : ${preFloorMC != null ? fmt.mc(preFloorMC) : 'N/A'}
 
-  Identified Floor         : ${pullbacks.length ? fmt.mc(pullbacks[0].lowMC) : 'N/A'}
-
-  Floor & Entry            : ${evalFloorEntry(entryMC, pullbacks, athMC, esl, tsl)}
+  Floor & Entry            : ${evalFloorEntry(entryMC, preFloorMC, athMC, esl, tsl)}
 
   SL Logic                 : ${evalSLLogic(esl, tsl, entryMC, athMC, athTs, tpHits, tpLevels, terminalMC)}
 
@@ -1349,7 +1346,7 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
 
   Post-Trade Verdict       : ${postTradeVerdict(entryMC, athMC, esl, tsl, terminalMC, tpHits, tpLevels)}
 
-  Final Lesson             : ${finalLesson(esl, tsl, entryMC, athMC, athTs, pullbacks, tpHits, tpLevels, terminalMC)}
+  Final Lesson             : ${finalLesson(esl, tsl, entryMC, athMC, athTs, pullbacks, tpHits, tpLevels, terminalMC, preFloorMC)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ${candleCount} × 1-min candles  |  Supply: ${supply.toLocaleString()}
@@ -1488,15 +1485,18 @@ async function runAudit() {
     const terminalMC = lastC.close;
     const terminalTs = lastC.ts;
 
-    // ─ Pre-entry note ─
-    const preNote = preEntryNote(preRaw, entryMC, supply);
+    // ─ Pre-entry note & floor ─
+    const preNote    = preEntryNote(preRaw, entryMC, supply);
+    const preFloorMC = preRaw.length > 0
+      ? Math.min(...preRaw.map(c => toMC(c[3], supply)))
+      : null;
 
     setProgress(93, 'Generating briefing…');
 
     const briefing = generateBriefing({
       entryTs, entryMC, supply, entrySLPct, trailSLPct, tpLevels, setupNotes,
       esl, tsl, athMC, athTs, pullbacks, cycles, milestones, tpHits,
-      terminalMC, terminalTs, preNote, candleCount: mcCandles.length
+      terminalMC, terminalTs, preNote, preFloorMC, candleCount: mcCandles.length
     });
 
     setProgress(100, 'Audit complete.');
