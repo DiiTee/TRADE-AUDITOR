@@ -394,7 +394,10 @@ html, body {
       </div>
     </div>
 
-    <div class="section-label">▸ Stop Loss Configuration</div>
+    <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>▸ Stop Loss Configuration</span>
+      <button onclick="resetToDefaults()" style="background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);font-family:inherit;font-size:8px;letter-spacing:1.5px;text-transform:uppercase;padding:3px 8px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent-cyan)';this.style.color='var(--accent-cyan)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">↺ Reset to Defaults</button>
+    </div>
 
     <div class="row2">
       <div class="field">
@@ -525,6 +528,14 @@ function loadSettings() {
     set('defTp4', s.tp4); set('defTp5', s.tp5);
     // Pre-fill the live audit fields
     applySettings(s);
+  } catch (e) {}
+}
+
+function resetToDefaults() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    applySettings(JSON.parse(raw));
   } catch (e) {}
 }
 
