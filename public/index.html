@@ -290,40 +290,39 @@ html, body {
         <span class="settings-arrow" id="settingsArrow">▸</span>
       </div>
       <div class="settings-body" id="settingsBody">
+        <div class="hint" style="margin-bottom:10px;">Set your preferred defaults. Saving will pre-fill the SL/TP fields below on every visit.</div>
         <div class="row2">
           <div class="field">
             <label>Entry SL %</label>
-            <input type="number" id="entrySL" placeholder="e.g. 37 (blank = disabled)" min="0" max="99" step="0.5" />
-            <div class="hint">% drop from entry MC</div>
+            <input type="number" id="defEntrySL" placeholder="e.g. 37" min="0" max="99" step="0.5" />
           </div>
           <div class="field">
             <label>Trailing SL %</label>
-            <input type="number" id="trailSL" placeholder="e.g. 37 (blank = disabled)" min="0" max="99" step="0.5" />
-            <div class="hint">% drop from ATH</div>
+            <input type="number" id="defTrailSL" placeholder="e.g. 37" min="0" max="99" step="0.5" />
           </div>
         </div>
         <div class="row2">
           <div class="field">
             <label>TP1 %</label>
-            <input type="number" id="tp1" placeholder="e.g. 50" min="1" />
+            <input type="number" id="defTp1" placeholder="e.g. 50" min="1" />
           </div>
           <div class="field">
             <label>TP2 %</label>
-            <input type="number" id="tp2" placeholder="e.g. 127" min="1" />
+            <input type="number" id="defTp2" placeholder="e.g. 127" min="1" />
           </div>
         </div>
         <div class="row3">
           <div class="field">
             <label>TP3 %</label>
-            <input type="number" id="tp3" placeholder="e.g. 297" min="1" />
+            <input type="number" id="defTp3" placeholder="e.g. 297" min="1" />
           </div>
           <div class="field">
             <label>TP4 %</label>
-            <input type="number" id="tp4" placeholder="e.g. 397" min="1" />
+            <input type="number" id="defTp4" placeholder="e.g. 397" min="1" />
           </div>
           <div class="field">
             <label>TP5 %</label>
-            <input type="number" id="tp5" placeholder="e.g. 497" min="1" />
+            <input type="number" id="defTp5" placeholder="e.g. 497" min="1" />
           </div>
         </div>
         <button class="save-btn" id="saveSettingsBtn" onclick="saveSettings()">▸ SAVE AS DEFAULT</button>
@@ -377,6 +376,66 @@ html, body {
       </div>
     </div>
 
+    <div class="row2">
+      <div class="field">
+        <label>Exit MC ($) <span style="color:var(--text-muted);font-size:9px">optional</span></label>
+        <input type="number" id="terminalMCInput" placeholder="Leave blank = last candle" min="0" />
+        <div class="hint">Your actual exit market cap.</div>
+      </div>
+      <div class="field">
+        <label>Floor Lookback Window</label>
+        <select id="floorWindow" style="background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:9px 12px;color:var(--text-primary);font-family:inherit;font-size:12px;width:100%;outline:none;">
+          <option value="300">5 min</option>
+          <option value="900" selected>15 min</option>
+          <option value="1800">30 min</option>
+          <option value="3600">60 min</option>
+        </select>
+        <div class="hint">Pre-entry window for Identified Floor.</div>
+      </div>
+    </div>
+
+    <div class="section-label">▸ Stop Loss Configuration</div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Entry SL %</label>
+        <input type="number" id="entrySL" placeholder="blank = disabled" min="0" max="99" step="0.5" />
+        <div class="hint">% drop from entry MC</div>
+      </div>
+      <div class="field">
+        <label>Trailing SL %</label>
+        <input type="number" id="trailSL" placeholder="blank = disabled" min="0" max="99" step="0.5" />
+        <div class="hint">% drop from ATH</div>
+      </div>
+    </div>
+
+    <div class="section-label">▸ Take Profit Levels</div>
+
+    <div class="row2">
+      <div class="field">
+        <label>TP1 %</label>
+        <input type="number" id="tp1" placeholder="e.g. 50" min="1" />
+      </div>
+      <div class="field">
+        <label>TP2 %</label>
+        <input type="number" id="tp2" placeholder="e.g. 127" min="1" />
+      </div>
+    </div>
+    <div class="row3">
+      <div class="field">
+        <label>TP3 %</label>
+        <input type="number" id="tp3" placeholder="e.g. 297" min="1" />
+      </div>
+      <div class="field">
+        <label>TP4 %</label>
+        <input type="number" id="tp4" placeholder="e.g. 397" min="1" />
+      </div>
+      <div class="field">
+        <label>TP5 %</label>
+        <input type="number" id="tp5" placeholder="e.g. 497" min="1" />
+      </div>
+    </div>
+
     <div class="section-label">▸ Trade Context (optional)</div>
 
     <div class="field">
@@ -418,6 +477,58 @@ html, body {
 document.getElementById('preGradToggle').addEventListener('change', function () {
   document.getElementById('moralisSection').classList.toggle('hidden', !this.checked);
 });
+
+// ──────────────────────────────────────────────
+// SETTINGS — localStorage persistence
+// ──────────────────────────────────────────────
+const SETTINGS_KEY = 'tradeAuditorSettings';
+
+function toggleSettings() {
+  const body  = document.getElementById('settingsBody');
+  const arrow = document.getElementById('settingsArrow');
+  const open  = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+}
+
+function saveSettings() {
+  const get = id => document.getElementById(id).value;
+  const s = {
+    entrySL: get('defEntrySL'), trailSL: get('defTrailSL'),
+    tp1: get('defTp1'), tp2: get('defTp2'), tp3: get('defTp3'),
+    tp4: get('defTp4'), tp5: get('defTp5'),
+  };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  // Apply to live fields immediately
+  applySettings(s);
+  const btn = document.getElementById('saveSettingsBtn');
+  btn.textContent = '✔ SAVED';
+  btn.classList.add('saved');
+  setTimeout(() => { btn.textContent = '▸ SAVE AS DEFAULT'; btn.classList.remove('saved'); }, 1800);
+}
+
+function applySettings(s) {
+  const set = (id, val) => { if (val !== '' && val != null) document.getElementById(id).value = val; };
+  set('entrySL', s.entrySL); set('trailSL', s.trailSL);
+  set('tp1', s.tp1); set('tp2', s.tp2); set('tp3', s.tp3);
+  set('tp4', s.tp4); set('tp5', s.tp5);
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    // Fill the settings tab inputs
+    const set = (id, val) => { if (val !== '' && val != null) document.getElementById(id).value = val; };
+    set('defEntrySL', s.entrySL); set('defTrailSL', s.trailSL);
+    set('defTp1', s.tp1); set('defTp2', s.tp2); set('defTp3', s.tp3);
+    set('defTp4', s.tp4); set('defTp5', s.tp5);
+    // Pre-fill the live audit fields
+    applySettings(s);
+  } catch (e) {}
+}
+
+loadSettings();
 
 // ──────────────────────────────────────────────
 // UTILITY FUNCTIONS
@@ -1416,11 +1527,11 @@ async function runAudit() {
     const entryTimeStr = document.getElementById('entryTime').value;
     const entryMCraw   = document.getElementById('entryMC').value;
     const supplyRaw    = document.getElementById('totalSupply').value;
-    // 0 = user explicitly disabled that SL. NaN (blank) = fall back to default 37.
+    // blank = 0 = disabled
     const entrySLRaw = parseFloat(document.getElementById('entrySL').value);
     const trailSLRaw = parseFloat(document.getElementById('trailSL').value);
-    const entrySLPct = isNaN(entrySLRaw) ? 37 : entrySLRaw;
-    const trailSLPct = isNaN(trailSLRaw) ? 37 : trailSLRaw;
+    const entrySLPct = isNaN(entrySLRaw) ? 0 : entrySLRaw;
+    const trailSLPct = isNaN(trailSLRaw) ? 0 : trailSLRaw;
     const tpLevels = [
       parseFloat(document.getElementById('tp1').value) || 50,
       parseFloat(document.getElementById('tp2').value) || 127,
@@ -1428,7 +1539,9 @@ async function runAudit() {
       parseFloat(document.getElementById('tp4').value) || 397,
       parseFloat(document.getElementById('tp5').value) || 497,
     ];
-    const setupNotes = document.getElementById('setupNotes').value.trim();
+    const setupNotes        = document.getElementById('setupNotes').value.trim();
+    const terminalMCOverride = parseFloat(document.getElementById('terminalMCInput').value);
+    const floorWindowSecs   = parseInt(document.getElementById('floorWindow').value, 10) || 900;
 
     // ─ Validate ─
     if (!poolAddress)    throw new Error('Please enter a Pool or Mint address.');
@@ -1473,7 +1586,7 @@ async function runAudit() {
 
     // ─ Split pre/post entry ─
     const preRaw   = rawCandles.filter(c => c[0] < entryTs);
-    const floorRaw = rawCandles.filter(c => c[0] >= entryTs - 900 && c[0] < entryTs);
+    const floorRaw = rawCandles.filter(c => c[0] >= entryTs - floorWindowSecs && c[0] < entryTs);
     const postRaw  = rawCandles.filter(c => c[0] >= entryTs);
 
     if (postRaw.length === 0) {
@@ -1517,8 +1630,8 @@ async function runAudit() {
 
     // ─ Terminal floor ─
     const lastC = mcCandles[mcCandles.length - 1];
-    const terminalMC = lastC.close;
-    const terminalTs = lastC.ts;
+    const terminalMC = !isNaN(terminalMCOverride) ? terminalMCOverride : lastC.close;
+    const terminalTs = !isNaN(terminalMCOverride) ? null : lastC.ts;
 
     // ─ Pre-entry note & floor ─
     const preNote    = preEntryNote(preRaw, entryMC, supply);
