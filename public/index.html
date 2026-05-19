@@ -518,7 +518,7 @@ async function gtOHLCV(addr, beforeTs) {
 async function fetchAllGT(addr, entryTs) {
   let all = [];
   let beforeTs = null;
-  const TARGET = entryTs - 7200; // 2 h before entry for pre-entry PB note
+  const TARGET = entryTs - 900; // 15 min before entry for pre-entry PB note
   // 2.1 s between pages keeps requests under GeckoTerminal's 30 req/min limit.
   // This runs in the browser so it works on both Replit and Vercel (where
   // serverless instances don't share in-memory state between calls).
@@ -1438,7 +1438,7 @@ async function runAudit() {
     setProgress(65, `Processing ${rawCandles.length} candles…`);
 
     // ─ Split pre/post entry ─
-    const preRaw  = rawCandles.filter(c => c[0] < entryTs);
+    const preRaw  = rawCandles.filter(c => c[0] >= entryTs - 900 && c[0] < entryTs);
     const postRaw = rawCandles.filter(c => c[0] >= entryTs);
 
     if (postRaw.length === 0) {
