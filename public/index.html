@@ -228,6 +228,35 @@ html, body {
 ::-webkit-scrollbar-track { background: var(--bg-main); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+/* ── SETTINGS TAB ── */
+.settings-tab {
+  border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: 16px; overflow: hidden;
+}
+.settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; background: var(--bg-input); cursor: pointer;
+  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--text-muted); user-select: none; transition: color 0.2s;
+}
+.settings-header:hover { color: var(--text-secondary); }
+.settings-arrow { transition: transform 0.25s; }
+.settings-arrow.open { transform: rotate(90deg); }
+.settings-body {
+  display: none; padding: 14px;
+  border-top: 1px solid var(--border); background: rgba(19,24,55,0.4);
+}
+.settings-body.open { display: block; }
+.save-btn {
+  width: 100%; padding: 8px; background: transparent;
+  border: 1px solid var(--accent-cyan); border-radius: 6px;
+  color: var(--accent-cyan); font-family: inherit; font-size: 10px;
+  letter-spacing: 2px; text-transform: uppercase; cursor: pointer;
+  margin-top: 10px; transition: all 0.2s;
+}
+.save-btn:hover { background: rgba(0,212,255,0.1); }
+.save-btn.saved { border-color: var(--accent-green); color: var(--accent-green); }
+
 /* Responsive */
 @media (max-width: 860px) {
   .main { grid-template-columns: 1fr; height: auto; }
@@ -253,6 +282,53 @@ html, body {
 
   <!-- ══════════════ INPUT PANEL ══════════════ -->
   <div class="input-panel">
+
+    <!-- ⚙ SETTINGS TAB -->
+    <div class="settings-tab">
+      <div class="settings-header" onclick="toggleSettings()">
+        ⚙ &nbsp;Default Settings
+        <span class="settings-arrow" id="settingsArrow">▸</span>
+      </div>
+      <div class="settings-body" id="settingsBody">
+        <div class="row2">
+          <div class="field">
+            <label>Entry SL %</label>
+            <input type="number" id="entrySL" placeholder="e.g. 37 (blank = disabled)" min="0" max="99" step="0.5" />
+            <div class="hint">% drop from entry MC</div>
+          </div>
+          <div class="field">
+            <label>Trailing SL %</label>
+            <input type="number" id="trailSL" placeholder="e.g. 37 (blank = disabled)" min="0" max="99" step="0.5" />
+            <div class="hint">% drop from ATH</div>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>TP1 %</label>
+            <input type="number" id="tp1" placeholder="e.g. 50" min="1" />
+          </div>
+          <div class="field">
+            <label>TP2 %</label>
+            <input type="number" id="tp2" placeholder="e.g. 127" min="1" />
+          </div>
+        </div>
+        <div class="row3">
+          <div class="field">
+            <label>TP3 %</label>
+            <input type="number" id="tp3" placeholder="e.g. 297" min="1" />
+          </div>
+          <div class="field">
+            <label>TP4 %</label>
+            <input type="number" id="tp4" placeholder="e.g. 397" min="1" />
+          </div>
+          <div class="field">
+            <label>TP5 %</label>
+            <input type="number" id="tp5" placeholder="e.g. 497" min="1" />
+          </div>
+        </div>
+        <button class="save-btn" id="saveSettingsBtn" onclick="saveSettings()">▸ SAVE AS DEFAULT</button>
+      </div>
+    </div>
 
     <div class="section-label">▸ Token Identifier</div>
 
@@ -298,48 +374,6 @@ html, body {
         <label>Total Supply (optional)</label>
         <input type="number" id="totalSupply" placeholder="Default: 1,000,000,000" min="1" />
         <div class="hint">Leave blank for 1B default</div>
-      </div>
-    </div>
-
-    <div class="section-label">▸ Stop Loss Configuration</div>
-
-    <div class="row2">
-      <div class="field">
-        <label>Entry SL %</label>
-        <input type="number" id="entrySL" value="37" min="1" max="99" step="0.5" />
-        <div class="hint">% drop from entry MC</div>
-      </div>
-      <div class="field">
-        <label>Trailing SL %</label>
-        <input type="number" id="trailSL" value="37" min="1" max="99" step="0.5" />
-        <div class="hint">% drop from ATH</div>
-      </div>
-    </div>
-
-    <div class="section-label">▸ Take Profit Levels</div>
-
-    <div class="row2">
-      <div class="field">
-        <label>TP1 %</label>
-        <input type="number" id="tp1" value="50" min="1" />
-      </div>
-      <div class="field">
-        <label>TP2 %</label>
-        <input type="number" id="tp2" value="127" min="1" />
-      </div>
-    </div>
-    <div class="row3">
-      <div class="field">
-        <label>TP3 %</label>
-        <input type="number" id="tp3" value="297" min="1" />
-      </div>
-      <div class="field">
-        <label>TP4 %</label>
-        <input type="number" id="tp4" value="397" min="1" />
-      </div>
-      <div class="field">
-        <label>TP5 %</label>
-        <input type="number" id="tp5" value="497" min="1" />
       </div>
     </div>
 
