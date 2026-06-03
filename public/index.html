@@ -397,6 +397,24 @@ html, body {
       </div>
     </div>
 
+    <div class="toggle-row" style="margin-top:8px;">
+      <label class="toggle">
+        <input type="checkbox" id="manualFloorToggle" onchange="toggleManualFloor()" />
+        <span class="tslider"></span>
+      </label>
+      <div class="toggle-info">
+        <div class="ti-title">MANUAL IDENTIFIED FLOOR</div>
+        <div class="ti-sub">Override auto-calculated floor with a custom MC value</div>
+      </div>
+    </div>
+    <div id="manualFloorSection" class="hidden">
+      <div class="field">
+        <label>Identified Floor (MC $)</label>
+        <input type="number" id="manualFloorMC" placeholder="e.g. 80000" min="0" />
+        <div class="hint">Overrides the auto-calculated floor for all floor-dependent metrics.</div>
+      </div>
+    </div>
+
     <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;">
       <span>▸ Stop Loss Configuration</span>
       <button onclick="resetToDefaults()" style="background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);font-family:inherit;font-size:8px;letter-spacing:1.5px;text-transform:uppercase;padding:3px 8px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent-cyan)';this.style.color='var(--accent-cyan)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">↺ Reset to Defaults</button>
@@ -483,6 +501,14 @@ html, body {
 document.getElementById('preGradToggle').addEventListener('change', function () {
   document.getElementById('moralisSection').classList.toggle('hidden', !this.checked);
 });
+
+// ──────────────────────────────────────────────
+// TOGGLE MANUAL FLOOR SECTION
+// ──────────────────────────────────────────────
+function toggleManualFloor() {
+  const on = document.getElementById('manualFloorToggle').checked;
+  document.getElementById('manualFloorSection').classList.toggle('hidden', !on);
+}
 
 // ──────────────────────────────────────────────
 // SETTINGS — localStorage persistence
@@ -884,6 +910,30 @@ function trackMilestonesAndTPs(candles, entryMC, tpLevels) {
     });
   }
   return { milestones, tpHits };
+}
+
+// ──────────────────────────────────────────────
+// SHELF ANALYSIS — finds the most supported price
+// cluster among pre-entry candle lows
+// ──────────────────────────────────────────────
+function computeShelfAnalysis(candles) {
+  if (!candles || candles.length < 2) return null;
+  const lows = candles.map(c => c[3]).filter(p => p > 0);
+  if (lows.length < 2) return null;
+
+  const sorted = [...lows].sort((a, b) => a - b);
+  const TOLERANCE = 0.04; // 4% band — lows within 4% of each other form a shelf
+
+  let bestPrice = null, bestCount = 0;
+  for (const base of sorted) {
+    const cluster = sorted.filter(p => Math.abs(p - base) / base <= TOLERANCE);
+    if (cluster.length > bestCount) {
+      bestCount = cluster.length;
+      bestPrice = cluster.reduce((s, v) => s + v, 0) / cluster.length;
+    }
+  }
+
+  return bestPrice !== null ? { activeShelfPrice: bestPrice } : null;
 }
 
 // ──────────────────────────────────────────────
@@ -1648,10 +1698,28 @@ async function runAudit() {
     const terminalTs = !isNaN(terminalMCOverride) ? null : lastC.ts;
 
     // ─ Pre-entry note & floor ─
-    const preNote    = preEntryNote(preRaw, entryMC, supply);
-    const preFloorMC = floorRaw.length > 0
-      ? Math.min(...floorRaw.map(c => toMC(c[3], supply)))
-      : null;
+    const preNote = preEntryNote(preRaw, entryMC, supply);
+
+    // Identified Floor — shelf-analysis formula applied to pre-entry candles
+    let preFloorMC = null;
+    if (floorRaw.length > 0) {
+      const localFloorMC = Math.min(...floorRaw.map(c => toMC(c[3], supply)));
+      const sa            = computeShelfAnalysis(floorRaw);
+      const currentMC     = entryMC;
+      const defCurrent    = supply > 0 ? entryMC / supply : 0;
+
+      let activeShelfMC = localFloorMC;
+      if (sa && sa.activeShelfPrice > 0 && defCurrent > 0) {
+        activeShelfMC = currentMC * (sa.activeShelfPrice / defCurrent);
+      }
+      preFloorMC = activeShelfMC;
+    }
+
+    // Manual floor override (user-supplied)
+    const manualFloorVal = parseFloat(document.getElementById('manualFloorMC').value);
+    if (document.getElementById('manualFloorToggle').checked && !isNaN(manualFloorVal) && manualFloorVal > 0) {
+      preFloorMC = manualFloorVal;
+    }
 
     setProgress(93, 'Generating briefing…');
 
