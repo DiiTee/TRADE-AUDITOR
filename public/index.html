@@ -192,7 +192,10 @@ html, body {
 .m-card .mv.green { color: var(--accent-green); }
 .m-card .mv.red { color: var(--accent-red); }
 .m-card .mv.small { font-size: 13px; }
-.m-card .ms { font-size: 10px; letter-spacing: 1px; color: var(--text-muted); margin-top: 3px; }
+.m-card .ms { font-size: 13px; font-weight: 700; letter-spacing: 1px; margin-top: 4px; }
+.m-card .ms.green { color: var(--accent-green); text-shadow: 0 0 8px var(--glow-green); }
+.m-card .ms.red   { color: var(--accent-red);   text-shadow: 0 0 8px rgba(255,71,87,0.35); }
+.m-card .ms.muted { color: var(--text-muted); }
 
 /* Briefing card */
 .briefing-card {
@@ -1759,12 +1762,12 @@ async function runAudit() {
         <div class="m-card">
           <div class="ml">Entry SL</div>
           <div class="mv ${esl.disabled ? '' : esl.triggered ? 'red' : 'green'}">${esl.disabled ? 'NONE' : esl.triggered ? 'SL HIT' : 'SAFE'}</div>
-          ${!esl.disabled ? (() => { const g = pct(entryMC, esl.highest); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
+          ${!esl.disabled ? (() => { const g = pct(entryMC, esl.highest); const cls = g > 0 ? 'green' : g < 0 ? 'red' : 'muted'; return `<div class="ms ${cls}">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
         </div>
         <div class="m-card">
           <div class="ml">Trailing SL</div>
           <div class="mv ${tsl.disabled ? '' : tsl.triggered ? 'red' : 'green'}">${tsl.disabled ? 'NONE' : tsl.triggered ? 'SL HIT' : 'SAFE'}</div>
-          ${!tsl.disabled ? (() => { const g = pct(entryMC, tsl.triggered ? tsl.peakBeforeTrigger : tsl.highest); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
+          ${!tsl.disabled ? (() => { const g = pct(entryMC, tsl.triggered ? tsl.peakBeforeTrigger : tsl.highest); const cls = g > 0 ? 'green' : g < 0 ? 'red' : 'muted'; return `<div class="ms ${cls}">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
         </div>
         <div class="m-card">
           <div class="ml">Cycles</div>
