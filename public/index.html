@@ -888,6 +888,7 @@ function runSLSimulation(candles, entryMC, entrySLPct, trailSLPct) {
       const tslTrigger = tsl.highest * (1 - trailSLPct / 100);
       if (c.low <= tslTrigger) {
         tsl.triggered = true; tsl.ts = c.ts; tsl.mc = c.low; tsl.finalTrigger = tslTrigger;
+        tsl.peakBeforeTrigger = tsl.highest; // snapshot ATH at the moment TSL fires
       }
     }
   }
@@ -1758,12 +1759,12 @@ async function runAudit() {
         <div class="m-card">
           <div class="ml">Entry SL</div>
           <div class="mv ${esl.disabled ? '' : esl.triggered ? 'red' : 'green'}">${esl.disabled ? 'NONE' : esl.triggered ? 'SL HIT' : 'SAFE'}</div>
-          ${(!esl.disabled && esl.triggered) ? (() => { const g = pct(entryMC, esl.highest); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
+          ${!esl.disabled ? (() => { const g = pct(entryMC, esl.highest); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
         </div>
         <div class="m-card">
           <div class="ml">Trailing SL</div>
           <div class="mv ${tsl.disabled ? '' : tsl.triggered ? 'red' : 'green'}">${tsl.disabled ? 'NONE' : tsl.triggered ? 'SL HIT' : 'SAFE'}</div>
-          ${(!tsl.disabled && tsl.triggered) ? (() => { const g = pct(entryMC, tsl.highest); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
+          ${!tsl.disabled ? (() => { const g = pct(entryMC, tsl.triggered ? tsl.peakBeforeTrigger : tsl.highest); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
         </div>
         <div class="m-card">
           <div class="ml">Cycles</div>
