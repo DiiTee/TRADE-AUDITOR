@@ -868,12 +868,15 @@ function runSLSimulation(candles, entryMC, entrySLPct, trailSLPct) {
   const tslDisabled = trailSLPct === 0;
 
   const eslTrigger = eslDisabled ? -Infinity : entryMC * (1 - entrySLPct / 100);
-  let esl = { triggered: false, ts: null, mc: null, trigger: eslTrigger, disabled: eslDisabled };
+  let esl = { triggered: false, ts: null, mc: null, trigger: eslTrigger, disabled: eslDisabled, highest: entryMC };
   let tsl = { triggered: false, ts: null, mc: null, highest: entryMC, highestTs: null, disabled: tslDisabled };
 
   for (const c of candles) {
     // Always track highest for ATH purposes even if TSL disabled
     if (c.high > tsl.highest) { tsl.highest = c.high; tsl.highestTs = c.ts; }
+
+    // Track peak reached before ESL triggers
+    if (!eslDisabled && !esl.triggered && c.high > esl.highest) { esl.highest = c.high; }
 
     // ESL check — use LOW wick (skip if disabled)
     if (!eslDisabled && !esl.triggered && c.low <= eslTrigger) {
@@ -1755,12 +1758,12 @@ async function runAudit() {
         <div class="m-card">
           <div class="ml">Entry SL</div>
           <div class="mv ${esl.disabled ? '' : esl.triggered ? 'red' : 'green'}">${esl.disabled ? 'NONE' : esl.triggered ? 'SL HIT' : 'SAFE'}</div>
-          ${(!esl.disabled && esl.triggered) ? (() => { const g = pct(entryMC, esl.mc); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
+          ${(!esl.disabled && esl.triggered) ? (() => { const g = pct(entryMC, esl.highest); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
         </div>
         <div class="m-card">
           <div class="ml">Trailing SL</div>
           <div class="mv ${tsl.disabled ? '' : tsl.triggered ? 'red' : 'green'}">${tsl.disabled ? 'NONE' : tsl.triggered ? 'SL HIT' : 'SAFE'}</div>
-          ${(!tsl.disabled && tsl.triggered) ? (() => { const g = pct(entryMC, tsl.mc); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
+          ${(!tsl.disabled && tsl.triggered) ? (() => { const g = pct(entryMC, tsl.highest); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
         </div>
         <div class="m-card">
           <div class="ml">Cycles</div>
