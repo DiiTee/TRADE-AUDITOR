@@ -1755,12 +1755,12 @@ async function runAudit() {
         <div class="m-card">
           <div class="ml">Entry SL</div>
           <div class="mv ${esl.disabled ? '' : esl.triggered ? 'red' : 'green'}">${esl.disabled ? 'NONE' : esl.triggered ? 'SL HIT' : 'SAFE'}</div>
-          ${!esl.disabled ? `<div class="ms">(${(-entrySLPct).toFixed(1)}%)</div>` : ''}
+          ${(!esl.disabled && esl.triggered) ? (() => { const g = pct(entryMC, esl.mc); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
         </div>
         <div class="m-card">
           <div class="ml">Trailing SL</div>
           <div class="mv ${tsl.disabled ? '' : tsl.triggered ? 'red' : 'green'}">${tsl.disabled ? 'NONE' : tsl.triggered ? 'SL HIT' : 'SAFE'}</div>
-          ${(() => { if (tsl.disabled) return ''; const g = tsl.triggered ? pct(entryMC, tsl.mc) : pct(entryMC, tsl.highest * (1 - trailSLPct / 100)); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })()}
+          ${(!tsl.disabled && tsl.triggered) ? (() => { const g = pct(entryMC, tsl.mc); return `<div class="ms">(${g >= 0 ? '+' : ''}${g.toFixed(1)}%)</div>`; })() : ''}
         </div>
         <div class="m-card">
           <div class="ml">Cycles</div>
