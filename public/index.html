@@ -1060,6 +1060,22 @@ function evalSLLogic(esl, tsl, entryMC, athMC, athTs, tpHits, tpLevels, terminal
   const bestCaptured = Math.max(eslCaptured, tslCaptured);
   const g = pct(entryMC, athMC);
 
+  // Peak gain note — appended wherever an SL is active
+  function fmtG(val) { return `${val >= 0 ? '+' : ''}${val.toFixed(1)}%`; }
+  function slGainNote() {
+    const parts = [];
+    if (eslActive) {
+      const eslPeak = pct(entryMC, esl.highest);
+      parts.push(`ESL peak gain: ${fmtG(eslPeak)}`);
+    }
+    if (tslActive) {
+      const tslPeakMC = tsl.triggered ? tsl.peakBeforeTrigger : tsl.highest;
+      const tslPeak   = pct(entryMC, tslPeakMC);
+      parts.push(`TSL peak gain: ${fmtG(tslPeak)}`);
+    }
+    return parts.length ? `  [${parts.join('  |  ')}]` : '';
+  }
+
   // ─── CONVICTION HOLD — neither SL was used ───
   if (!eslActive && !tslActive) {
     const lines = [];
@@ -1105,38 +1121,38 @@ function evalSLLogic(esl, tsl, entryMC, athMC, athTs, tpHits, tpLevels, terminal
       }
     }
 
-    return `🎯 PLAN EXECUTED — All ${totalTPs}/${totalTPs} TPs captured under ${which}. The setup delivered exactly as designed.${extras.length ? ' ' + extras.join(' ') : ''}`;
+    return `🎯 PLAN EXECUTED — All ${totalTPs}/${totalTPs} TPs captured under ${which}. The setup delivered exactly as designed.${extras.length ? ' ' + extras.join(' ') : ''}${slGainNote()}`;
   }
 
   // ─── Both stops active and neither hit ───
   if (eslActive && !esl.triggered && tslActive && !tsl.triggered)
-    return `🛡️  PROTECTED — Neither SL hit. Full ride to ATH ${fmt.mc(athMC)} was possible.`;
+    return `🛡️  PROTECTED — Neither SL hit. Full ride to ATH ${fmt.mc(athMC)} was possible.${slGainNote()}`;
 
   // ─── Only TSL active and not triggered ───
   if (!eslActive && tslActive && !tsl.triggered)
-    return `🛡️  PROTECTED — TSL never hit. Full ride to ATH ${fmt.mc(athMC)} was possible.`;
+    return `🛡️  PROTECTED — TSL never hit. Full ride to ATH ${fmt.mc(athMC)} was possible.${slGainNote()}`;
 
   // ─── Only ESL active and not triggered ───
   if (eslActive && !esl.triggered && !tslActive)
-    return `🛡️  PROTECTED — ESL never hit. Full ride to ATH ${fmt.mc(athMC)} was possible.`;
+    return `🛡️  PROTECTED — ESL never hit. Full ride to ATH ${fmt.mc(athMC)} was possible.${slGainNote()}`;
 
   // ─── TSL hit (with or without ESL active) ───
   if (tslActive && tsl.triggered && (!eslActive || !esl.triggered))
-    return `📍 TRAILING SL HIT — TSL closed position at ${fmt.mc(tsl.mc)} [${fmt.ts(tsl.ts)}]. Locked in partial gains from ATH ${fmt.mc(athMC)}.`;
+    return `📍 TRAILING SL HIT — TSL closed position at ${fmt.mc(tsl.mc)} [${fmt.ts(tsl.ts)}]. Locked in partial gains from ATH ${fmt.mc(athMC)}.${slGainNote()}`;
 
   // ─── ESL hit ───
   if (eslActive && esl.triggered) {
     if (athTs && athTs <= esl.ts) {
       const gainNote = g > 0 ? ` (+${g.toFixed(0)}% from entry)` : '';
-      return `🎯 PEAK CAPTURED, STOPPED POST-PEAK — ATH ${fmt.mc(athMC)}${gainNote} reached [${fmt.ts(athTs)}] before ESL hit at ${fmt.mc(esl.mc)} [${fmt.ts(esl.ts)}]. You were in the trade for the full upside but stopped out on the retrace. Review SL placement to avoid getting shaken out post-peak.`;
+      return `🎯 PEAK CAPTURED, STOPPED POST-PEAK — ATH ${fmt.mc(athMC)}${gainNote} reached [${fmt.ts(athTs)}] before ESL hit at ${fmt.mc(esl.mc)} [${fmt.ts(esl.ts)}]. You were in the trade for the full upside but stopped out on the retrace. Review SL placement to avoid getting shaken out post-peak.${slGainNote()}`;
     }
     const huntedNote = g > 0
       ? ` Price went on to reach ${fmt.mc(athMC)} (+${g.toFixed(0)}% from entry) but you were no longer in the trade.`
       : '';
-    return `🔴 HUNTED — ESL hit at ${fmt.mc(esl.mc)} [${fmt.ts(esl.ts)}].${huntedNote} Review SL placement relative to key lows.`;
+    return `🔴 HUNTED — ESL hit at ${fmt.mc(esl.mc)} [${fmt.ts(esl.ts)}].${huntedNote} Review SL placement relative to key lows.${slGainNote()}`;
   }
 
-  return `📋 MIXED — Review SL events in detail above.`;
+  return `📋 MIXED — Review SL events in detail above.${slGainNote()}`;
 }
 
 function evalTPLogic(entryMC, athMC, tpLevels, tpHits, esl, tsl, pullbacks) {
