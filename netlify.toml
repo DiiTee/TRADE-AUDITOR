@@ -1,0 +1,31 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Proxy API routes to Netlify Functions
+[[redirects]]
+  from   = "/api/gecko/*"
+  to     = "/.netlify/functions/gecko/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/moralis/*"
+  to     = "/.netlify/functions/moralis/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/health"
+  to     = "/.netlify/functions/health"
+  status = 200
+  force  = true
+
+# SPA fallback — serve index.html for everything else
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
