@@ -98,6 +98,11 @@ html, body {
   border-color: var(--accent-cyan); box-shadow: 0 0 0 2px var(--glow);
 }
 .field .hint { font-size: 10px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+.mc-fetch-status { font-size: 10px; margin-top: 4px; min-height: 14px; letter-spacing: 0.5px; }
+.mc-fetch-status.fetching { color: var(--accent-cyan); }
+.mc-fetch-status.fetched  { color: var(--accent-green); }
+.mc-fetch-status.error    { color: var(--accent-red); }
+#entryMC.mc-autofetched   { border-color: var(--accent-green) !important; box-shadow: 0 0 0 2px var(--glow-green); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 
@@ -375,6 +380,7 @@ html, body {
       <div class="field">
         <label>Entry MC ($)</label>
         <input type="number" id="entryMC" placeholder="e.g. 150000" min="0" />
+        <div class="mc-fetch-status" id="mcFetchStatus"></div>
       </div>
       <div class="field">
         <label>Total Supply (optional)</label>
@@ -1840,6 +1846,137 @@ async function runAudit() {
 
   document.getElementById('auditBtn').disabled = false;
 }
+
+// ──────────────────────────────────────────────
+// AUTO-FETCH ENTRY MC
+// ──────────────────────────────────────────────
+let _mcAutoFetched = false;
+let _mcFetchTimer  = null;
+
+function scheduleMCFetch() {
+  clearTimeout(_mcFetchTimer);
+  _mcFetchTimer = setTimeout(autoFetchEntryMC, 700);
+}
+
+async function autoFetchEntryMC() {
+  const poolEl     = document.getElementById('poolAddress');
+  const timeEl     = document.getElementById('entryTime');
+  const mcEl       = document.getElementById('entryMC');
+  const statusEl   = document.getElementById('mcFetchStatus');
+  const supplyRaw  = document.getElementById('totalSupply').value;
+  const supply     = supplyRaw ? parseFloat(supplyRaw) : 1_000_000_000;
+
+  const pool    = poolEl.value.trim();
+  const timeStr = timeEl.value;
+
+  // Need both address and time to proceed
+  if (!pool || !timeStr) return;
+
+  // Don't overwrite a value the user typed manually
+  if (mcEl.value && !_mcAutoFetched) return;
+
+  const entryTs = Math.floor(new Date(timeStr).getTime() / 1000);
+  if (isNaN(entryTs)) return;
+
+  const preGrad    = document.getElementById('preGradToggle').checked;
+  const moralisKey = document.getElementById('moralisKey').value.trim();
+  if (preGrad && !moralisKey) return; // can't fetch without key
+
+  statusEl.className   = 'mc-fetch-status fetching';
+  statusEl.textContent = '⟳ Fetching market cap at entry time…';
+  mcEl.classList.remove('mc-autofetched');
+
+  try {
+    let closePrice = null;
+
+    if (preGrad) {
+      // Moralis: fetch recent OHLCV and find candle closest to entryTs
+      const url = `/api/moralis/token/mainnet/${pool}/ohlcv?timeframe=1min&limit=20`;
+      const r = await fetch(url, {
+        headers: { 'X-Moralis-Key': moralisKey, 'Accept': 'application/json' }
+      });
+      if (!r.ok) throw new Error(`Moralis error (${r.status})`);
+      const d = await r.json();
+      const candles = (d.result || d.data || []).map(c => {
+        const ts = typeof c.timestamp === 'number'
+          ? Math.floor(c.timestamp / 1000)
+          : Math.floor(new Date(c.timestamp).getTime() / 1000);
+        return { ts, close: +c.close };
+      }).sort((a, b) => a.ts - b.ts);
+      if (!candles.length) throw new Error('No candle data returned');
+      const best = candles.reduce((prev, cur) =>
+        Math.abs(cur.ts - entryTs) < Math.abs(prev.ts - entryTs) ? cur : prev);
+      closePrice = best.close;
+
+    } else {
+      // GeckoTerminal: resolve pool address first
+      let resolvedPool = pool;
+      const poolR = await fetch(`${GT}/networks/solana/pools/${pool}`,
+        { headers: { 'Accept': 'application/json;version=20230302' } });
+      if (!poolR.ok) {
+        const tokenR = await fetch(`${GT}/networks/solana/tokens/${pool}/pools?page=1`,
+          { headers: { 'Accept': 'application/json;version=20230302' } });
+        if (!tokenR.ok) throw new Error('Could not resolve pool');
+        const td = await tokenR.json();
+        const pools = td.data;
+        if (!pools || pools.length === 0) throw new Error('No pools found for token');
+        const p = pools[0];
+        resolvedPool = (p.attributes && p.attributes.address)
+          ? p.attributes.address
+          : p.id.replace(/^solana_/, '');
+      }
+
+      // Fetch a small window of candles around the entry time
+      const url = `${GT}/networks/solana/pools/${resolvedPool}/ohlcv/minute?aggregate=1&limit=10&before_timestamp=${entryTs + 300}`;
+      const r = await fetch(url, { headers: { 'Accept': 'application/json;version=20230302' } });
+      if (r.status === 429) throw new Error('Rate limit — wait a moment and re-enter the time');
+      if (!r.ok) throw new Error(`GeckoTerminal error (${r.status})`);
+      const d = await r.json();
+      const candles = (d.data && d.data.attributes && d.data.attributes.ohlcv_list) || [];
+      if (!candles.length) throw new Error('No candle data returned');
+      // candles: [ts, open, high, low, close, vol] — sort ascending, find closest
+      candles.sort((a, b) => a[0] - b[0]);
+      const best = candles.reduce((prev, cur) =>
+        Math.abs(cur[0] - entryTs) < Math.abs(prev[0] - entryTs) ? cur : prev);
+      closePrice = best[4]; // close price
+    }
+
+    if (closePrice == null || isNaN(closePrice) || closePrice <= 0)
+      throw new Error('Price data unavailable for this timestamp');
+
+    const mc = Math.round(closePrice * supply);
+    mcEl.value = mc;
+    mcEl.classList.add('mc-autofetched');
+    _mcAutoFetched = true;
+    statusEl.className   = 'mc-fetch-status fetched';
+    statusEl.textContent = `✓ Auto-fetched — edit to override`;
+
+  } catch (err) {
+    statusEl.className   = 'mc-fetch-status error';
+    statusEl.textContent = `⚠ Could not auto-fetch — enter manually`;
+    console.warn('[AutoMC]', err.message);
+  }
+}
+
+// Clear auto-fetch flag when user manually edits Entry MC
+document.getElementById('entryMC').addEventListener('input', function () {
+  _mcAutoFetched = false;
+  this.classList.remove('mc-autofetched');
+  const s = document.getElementById('mcFetchStatus');
+  s.className = 'mc-fetch-status';
+  s.textContent = '';
+});
+
+// Trigger auto-fetch when pool address or entry time changes
+document.getElementById('poolAddress').addEventListener('change', scheduleMCFetch);
+document.getElementById('poolAddress').addEventListener('blur',   scheduleMCFetch);
+document.getElementById('entryTime').addEventListener('change',   scheduleMCFetch);
+// Re-fetch if supply changes while we have an auto-fetched value
+document.getElementById('totalSupply').addEventListener('change', function () {
+  if (_mcAutoFetched) { _mcAutoFetched = false; scheduleMCFetch(); }
+});
+// Fire when Moralis key is entered in pre-grad mode
+document.getElementById('moralisKey').addEventListener('blur', scheduleMCFetch);
 
 // ──────────────────────────────────────────────
 // COPY
