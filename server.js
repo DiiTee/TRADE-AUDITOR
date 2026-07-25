@@ -100,6 +100,66 @@ app.get('/api/moralis/*', async (req, res) => {
   }
 });
 
+// ── MC Snapshot — fast single-candle lookup (bypasses audit queue) ─
+// Used by the auto-fetch feature. Makes at most 2 GT calls per
+// request (pool resolution + OHLCV). A separate lightweight cooldown
+// prevents abuse while keeping the audit queue unblocked.
+let _lastSnapAt = 0;
+const SNAP_COOLDOWN_MS = 2100; // respect the same per-call minimum
+
+app.get('/api/mc-snapshot', async (req, res) => {
+  const { pool, ts } = req.query;
+  if (!pool || !ts) return res.status(400).json({ error: 'pool and ts are required' });
+  const timestamp = parseInt(ts, 10);
+  if (isNaN(timestamp)) return res.status(400).json({ error: 'ts must be an integer' });
+
+  // Lightweight cooldown — independent of the audit queue
+  const gap = Date.now() - _lastSnapAt;
+  if (gap < SNAP_COOLDOWN_MS) await new Promise(r => setTimeout(r, SNAP_COOLDOWN_MS - gap));
+  _lastSnapAt = Date.now();
+
+  const headers = { 'Accept': 'application/json;version=20230302' };
+  if (GT_API_KEY) headers['x-cg-demo-api-key'] = GT_API_KEY;
+
+  try {
+    // Step 1 — resolve pool address (skip extra call if it already looks like a pool)
+    let poolAddr = pool;
+    const poolCheck = await fetch(`${GT_BASE}/networks/solana/pools/${pool}`, { headers });
+    if (!poolCheck.ok) {
+      _lastSnapAt = Date.now();
+      const tokenR = await fetch(`${GT_BASE}/networks/solana/tokens/${pool}/pools?page=1`, { headers });
+      if (!tokenR.ok) return res.status(404).json({ error: 'Pool not found for this address' });
+      const td = await tokenR.json();
+      const pools = td.data;
+      if (!pools || pools.length === 0) return res.status(404).json({ error: 'No pools found for token' });
+      const p = pools[0];
+      poolAddr = (p.attributes && p.attributes.address)
+        ? p.attributes.address
+        : p.id.replace(/^solana_/, '');
+    }
+
+    // Step 2 — fetch a small window of candles around the entry timestamp
+    _lastSnapAt = Date.now();
+    const ohlcvUrl = `${GT_BASE}/networks/solana/pools/${poolAddr}/ohlcv/minute?aggregate=1&limit=10&before_timestamp=${timestamp + 300}`;
+    const ohlcvR = await fetch(ohlcvUrl, { headers });
+    if (ohlcvR.status === 429) return res.status(429).json({ error: 'Rate limited — wait a moment and try again' });
+    if (!ohlcvR.ok) return res.status(ohlcvR.status).json({ error: `OHLCV fetch failed (${ohlcvR.status})` });
+
+    const d = await ohlcvR.json();
+    const candles = (d.data && d.data.attributes && d.data.attributes.ohlcv_list) || [];
+    if (!candles.length) return res.status(404).json({ error: 'No candle data near that timestamp' });
+
+    // Pick candle closest to requested timestamp
+    const best = candles.reduce((prev, cur) =>
+      Math.abs(cur[0] - timestamp) < Math.abs(prev[0] - timestamp) ? cur : prev);
+
+    res.json({ resolvedPool: poolAddr, closePrice: best[4], candleTs: best[0] });
+  } catch (err) {
+    console.error('[MC snapshot error]', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ── Health check ──────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

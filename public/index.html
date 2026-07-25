@@ -1909,36 +1909,18 @@ async function autoFetchEntryMC() {
       closePrice = best.close;
 
     } else {
-      // GeckoTerminal: resolve pool address first
-      let resolvedPool = pool;
-      const poolR = await fetch(`${GT}/networks/solana/pools/${pool}`,
-        { headers: { 'Accept': 'application/json;version=20230302' } });
-      if (!poolR.ok) {
-        const tokenR = await fetch(`${GT}/networks/solana/tokens/${pool}/pools?page=1`,
-          { headers: { 'Accept': 'application/json;version=20230302' } });
-        if (!tokenR.ok) throw new Error('Could not resolve pool');
-        const td = await tokenR.json();
-        const pools = td.data;
-        if (!pools || pools.length === 0) throw new Error('No pools found for token');
-        const p = pools[0];
-        resolvedPool = (p.attributes && p.attributes.address)
-          ? p.attributes.address
-          : p.id.replace(/^solana_/, '');
+      // GeckoTerminal: use the dedicated snapshot endpoint — one browser round
+      // trip, no audit-queue delay, server handles pool resolution + OHLCV fetch.
+      const r = await fetch(
+        `/api/mc-snapshot?pool=${encodeURIComponent(pool)}&ts=${entryTs}`
+      );
+      if (r.status === 429) throw new Error('Rate limit — wait a moment and try again');
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || `Snapshot error (${r.status})`);
       }
-
-      // Fetch a small window of candles around the entry time
-      const url = `${GT}/networks/solana/pools/${resolvedPool}/ohlcv/minute?aggregate=1&limit=10&before_timestamp=${entryTs + 300}`;
-      const r = await fetch(url, { headers: { 'Accept': 'application/json;version=20230302' } });
-      if (r.status === 429) throw new Error('Rate limit — wait a moment and re-enter the time');
-      if (!r.ok) throw new Error(`GeckoTerminal error (${r.status})`);
-      const d = await r.json();
-      const candles = (d.data && d.data.attributes && d.data.attributes.ohlcv_list) || [];
-      if (!candles.length) throw new Error('No candle data returned');
-      // candles: [ts, open, high, low, close, vol] — sort ascending, find closest
-      candles.sort((a, b) => a[0] - b[0]);
-      const best = candles.reduce((prev, cur) =>
-        Math.abs(cur[0] - entryTs) < Math.abs(prev[0] - entryTs) ? cur : prev);
-      closePrice = best[4]; // close price
+      const snap = await r.json();
+      closePrice = snap.closePrice;
     }
 
     if (closePrice == null || isNaN(closePrice) || closePrice <= 0)
