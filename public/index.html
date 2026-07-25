@@ -103,6 +103,17 @@ html, body {
 .mc-fetch-status.fetched  { color: var(--accent-green); }
 .mc-fetch-status.error    { color: var(--accent-red); }
 #entryMC.mc-autofetched   { border-color: var(--accent-green) !important; box-shadow: 0 0 0 2px var(--glow-green); }
+.mc-input-row { display: flex; gap: 6px; align-items: center; }
+.mc-input-row input { flex: 1; }
+.mc-refetch-btn {
+  flex-shrink: 0; height: 38px; width: 36px;
+  background: transparent; border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text-muted);
+  font-size: 14px; cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center;
+}
+.mc-refetch-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); background: rgba(0,212,255,0.08); }
+.mc-refetch-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 
@@ -384,7 +395,10 @@ html, body {
     <div class="row2">
       <div class="field">
         <label>Entry MC ($)</label>
-        <input type="number" id="entryMC" placeholder="e.g. 150000" min="0" />
+        <div class="mc-input-row">
+          <input type="number" id="entryMC" placeholder="e.g. 150000" min="0" />
+          <button class="mc-refetch-btn" id="mcRefetchBtn" onclick="refetchMC()" title="Re-fetch market cap">↺</button>
+        </div>
         <div class="mc-fetch-status" id="mcFetchStatus"></div>
       </div>
       <div class="field">
@@ -1883,9 +1897,27 @@ async function runAudit() {
 let _mcAutoFetched = false;
 let _mcFetchTimer  = null;
 
-function scheduleMCFetch() {
+function scheduleMCFetch(force = false) {
   clearTimeout(_mcFetchTimer);
+  if (force) {
+    // Clear whatever's there so the fetch always runs, regardless of whether
+    // the previous value was auto-fetched or manually typed.
+    _mcAutoFetched = true;
+    const mcEl    = document.getElementById('entryMC');
+    const statusEl = document.getElementById('mcFetchStatus');
+    mcEl.value = '';
+    mcEl.classList.remove('mc-autofetched');
+    statusEl.className   = 'mc-fetch-status fetching';
+    statusEl.textContent = '⟳ Fetching market cap at entry time…';
+  }
   _mcFetchTimer = setTimeout(autoFetchEntryMC, 700);
+}
+
+function refetchMC() {
+  const btn = document.getElementById('mcRefetchBtn');
+  btn.disabled = true;
+  setTimeout(() => { btn.disabled = false; }, 2000);
+  scheduleMCFetch(true);
 }
 
 async function autoFetchEntryMC() {
@@ -1985,10 +2017,12 @@ document.getElementById('entryMC').addEventListener('input', function () {
   s.textContent = '';
 });
 
-// Trigger auto-fetch when pool address or entry time changes
-document.getElementById('poolAddress').addEventListener('change', scheduleMCFetch);
-document.getElementById('poolAddress').addEventListener('blur',   scheduleMCFetch);
-document.getElementById('entryTime').addEventListener('change',   scheduleMCFetch);
+// Trigger auto-fetch when pool address or entry time changes.
+// Always force so changing either input clears and re-fetches regardless
+// of whether the previous value was auto-fetched or manually typed.
+document.getElementById('poolAddress').addEventListener('change', () => scheduleMCFetch(true));
+document.getElementById('poolAddress').addEventListener('blur',   () => scheduleMCFetch(true));
+document.getElementById('entryTime').addEventListener('change',   () => scheduleMCFetch(true));
 // Re-fetch if supply changes while we have an auto-fetched value
 document.getElementById('totalSupply').addEventListener('change', function () {
   if (_mcAutoFetched) { _mcAutoFetched = false; scheduleMCFetch(); }
