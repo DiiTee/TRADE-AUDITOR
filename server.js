@@ -128,10 +128,10 @@ app.get('/api/mc-snapshot', async (req, res) => {
     if (!poolCheck.ok) {
       _lastSnapAt = Date.now();
       const tokenR = await fetch(`${GT_BASE}/networks/solana/tokens/${pool}/pools?page=1`, { headers });
-      if (!tokenR.ok) return res.status(404).json({ error: 'Pool not found for this address' });
+      if (!tokenR.ok) return res.status(404).json({ error: 'Address not recognised — paste the token contract or a Raydium/Pumpswap pool address' });
       const td = await tokenR.json();
       const pools = td.data;
-      if (!pools || pools.length === 0) return res.status(404).json({ error: 'No pools found for token' });
+      if (!pools || pools.length === 0) return res.status(404).json({ error: 'Token has no pools on GeckoTerminal yet — it may be too new or not yet indexed' });
       const p = pools[0];
       poolAddr = (p.attributes && p.attributes.address)
         ? p.attributes.address
@@ -147,7 +147,7 @@ app.get('/api/mc-snapshot', async (req, res) => {
 
     const d = await ohlcvR.json();
     const candles = (d.data && d.data.attributes && d.data.attributes.ohlcv_list) || [];
-    if (!candles.length) return res.status(404).json({ error: 'No candle data near that timestamp' });
+    if (!candles.length) return res.status(404).json({ error: 'No price data found near that time — check the entry time is within the token\'s trading history' });
 
     // Pick candle closest to requested timestamp
     const best = candles.reduce((prev, cur) =>

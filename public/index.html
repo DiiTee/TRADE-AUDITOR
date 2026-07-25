@@ -1895,7 +1895,13 @@ async function autoFetchEntryMC() {
       const r = await fetch(url, {
         headers: { 'X-Moralis-Key': moralisKey, 'Accept': 'application/json' }
       });
-      if (!r.ok) throw new Error(`Moralis error (${r.status})`);
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        const detail = body.message || body.error || '';
+        if (r.status === 401 || r.status === 403) throw new Error('Moralis API key invalid or unauthorised — check the key and try again');
+        if (r.status === 404) throw new Error('Mint address not found on Moralis — confirm it is a valid Pump.fun mint');
+        throw new Error(`Moralis error (${r.status})${detail ? ': ' + detail : ''}`);
+      }
       const d = await r.json();
       const candles = (d.result || d.data || []).map(c => {
         const ts = typeof c.timestamp === 'number'
@@ -1935,7 +1941,7 @@ async function autoFetchEntryMC() {
 
   } catch (err) {
     statusEl.className   = 'mc-fetch-status error';
-    statusEl.textContent = `⚠ Could not auto-fetch — enter manually`;
+    statusEl.textContent = `⚠ ${err.message}`;
     console.warn('[AutoMC]', err.message);
   }
 }
