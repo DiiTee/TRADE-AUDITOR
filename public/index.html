@@ -337,6 +337,11 @@ html, body {
             <input type="number" id="defTp5" placeholder="e.g. 497" min="1" />
           </div>
         </div>
+        <div class="field" style="margin-top:10px;">
+          <label>GeckoTerminal API Key <span style="color:var(--text-muted);font-size:9px">optional — raises rate limit</span></label>
+          <input type="password" id="defGeckoKey" placeholder="Paste your demo API key" autocomplete="off" />
+          <div class="hint">Get a free key at geckoterminal.com → Account → API Keys. Stored locally in your browser only.</div>
+        </div>
         <button class="save-btn" id="saveSettingsBtn" onclick="saveSettings()">▸ SAVE AS DEFAULT</button>
       </div>
     </div>
@@ -538,6 +543,7 @@ function saveSettings() {
     entrySL: get('defEntrySL'), trailSL: get('defTrailSL'),
     tp1: get('defTp1'), tp2: get('defTp2'), tp3: get('defTp3'),
     tp4: get('defTp4'), tp5: get('defTp5'),
+    geckoKey: get('defGeckoKey'),
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
   // Apply to live fields immediately
@@ -565,6 +571,7 @@ function loadSettings() {
     set('defEntrySL', s.entrySL); set('defTrailSL', s.trailSL);
     set('defTp1', s.tp1); set('defTp2', s.tp2); set('defTp3', s.tp3);
     set('defTp4', s.tp4); set('defTp5', s.tp5);
+    set('defGeckoKey', s.geckoKey);
     // Pre-fill the live audit fields
     applySettings(s);
   } catch (e) {}
@@ -644,7 +651,22 @@ function setProgress(n, msg) {
 // All API calls go through our own server proxy — no CORS issues,
 // no third-party proxies, API key handled server-side.
 // ──────────────────────────────────────────────
+function getGeckoKey() {
+  try {
+    const s = JSON.parse(localStorage.getItem('tradeAuditorSettings') || '{}');
+    return s.geckoKey || '';
+  } catch (e) { return ''; }
+}
+
 async function apiFetch(url, options = {}) {
+  // Attach the user's GeckoTerminal key on every proxy request so the
+  // server can forward it and get higher rate limits.
+  if (url.startsWith('/api/gecko/') || url.startsWith('/api/mc-snapshot')) {
+    const key = getGeckoKey();
+    if (key) {
+      options = { ...options, headers: { ...(options.headers || {}), 'X-Gecko-Key': key } };
+    }
+  }
   const r = await fetch(url, options);
   return r;
 }

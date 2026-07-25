@@ -58,8 +58,9 @@ app.get('/api/gecko/*', async (req, res) => {
   const queryStr = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
   const target   = `${GT_BASE}/${subPath}${queryStr}`;
 
+  const effectiveKey = req.headers['x-gecko-key'] || GT_API_KEY;
   const headers = { 'Accept': 'application/json;version=20230302' };
-  if (GT_API_KEY) headers['x-cg-demo-api-key'] = GT_API_KEY;
+  if (effectiveKey) headers['x-cg-demo-api-key'] = effectiveKey;
 
   try {
     const upstream = await gtFetchWithRetry(target, { headers });
@@ -118,8 +119,9 @@ app.get('/api/mc-snapshot', async (req, res) => {
   if (gap < SNAP_COOLDOWN_MS) await new Promise(r => setTimeout(r, SNAP_COOLDOWN_MS - gap));
   _lastSnapAt = Date.now();
 
+  const effectiveKey = req.headers['x-gecko-key'] || GT_API_KEY;
   const headers = { 'Accept': 'application/json;version=20230302' };
-  if (GT_API_KEY) headers['x-cg-demo-api-key'] = GT_API_KEY;
+  if (effectiveKey) headers['x-cg-demo-api-key'] = effectiveKey;
 
   try {
     // Step 1 — resolve pool address (skip extra call if it already looks like a pool)
