@@ -714,9 +714,8 @@ async function gtOHLCV(addr, beforeTs) {
   const r = await apiFetch(url);
   if (r.status === 429) {
     throw new Error(
-      'GeckoTerminal rate limit reached (429).\n' +
-      'The server already retries automatically — if you see this, please wait 60 seconds and try again.\n' +
-      'Make sure your GECKO_API_KEY is set correctly in the server environment.'
+      'RATE_LIMIT: GeckoTerminal rate limit reached — please wait 60 seconds and try again.\n' +
+      'To reduce this happening: open Default Settings and add a free GeckoTerminal API key.'
     );
   }
   if (!r.ok) throw new Error(`GeckoTerminal OHLCV fetch failed (${r.status}).`);
@@ -1847,20 +1846,29 @@ async function runAudit() {
 
   } catch (err) {
     setStatus('ERROR', 'error');
-    op.innerHTML = `
-      <div class="out-header">
-        <div class="out-title">▸ Audit Failed</div>
-      </div>
-      <div class="err-card">
-        <strong>⚠ Error:</strong><br/><br/>${err.message.replace(/\n/g, '<br/>')}
-        <br/><br/>
-        <span style="color:var(--text-muted);font-size:10px;letter-spacing:1px">
+    const isRateLimit = err.message.startsWith('RATE_LIMIT:');
+    const displayMsg  = err.message.replace(/^RATE_LIMIT:\s*/, '');
+    const troubleshooting = isRateLimit
+      ? `<span style="color:var(--text-muted);font-size:10px;letter-spacing:1px">
+          TIPS<br/>
+          • Wait ~60 seconds for the rate-limit window to reset, then try again.<br/>
+          • Add a free GeckoTerminal API key in <strong>Default Settings</strong> to get a higher limit.
+        </span>`
+      : `<span style="color:var(--text-muted);font-size:10px;letter-spacing:1px">
           TROUBLESHOOTING<br/>
           • Paste the token contract address <em>or</em> the pool address (Raydium &amp; Pumpswap both work).<br/>
           • For tokens still on the bonding curve: enable the Pump.fun toggle and enter a Moralis key.<br/>
           • Very new tokens (&lt;1h old) may not have enough OHLCV history yet.<br/>
           • Open DevTools (F12) Console for full stack trace.
-        </span>
+        </span>`;
+    op.innerHTML = `
+      <div class="out-header">
+        <div class="out-title">▸ Audit Failed</div>
+      </div>
+      <div class="err-card">
+        <strong>⚠ ${isRateLimit ? 'Rate Limited' : 'Error'}:</strong><br/><br/>${displayMsg.replace(/\n/g, '<br/>')}
+        <br/><br/>
+        ${troubleshooting}
       </div>
     `;
     console.error('[TradeAuditor]', err);
