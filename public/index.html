@@ -279,6 +279,12 @@ html, body {
 }
 .save-btn:hover { background: rgba(0,212,255,0.1); }
 .save-btn.saved { border-color: var(--accent-green); color: var(--accent-green); }
+.audit-btn.cancelling {
+  border-color: var(--accent-red) !important;
+  color: var(--accent-red) !important;
+  box-shadow: 0 0 20px rgba(255,71,87,0.35) !important;
+}
+.audit-btn.cancelling:hover { background: rgba(255,71,87,0.12) !important; }
 
 /* Responsive */
 @media (max-width: 860px) {
@@ -352,6 +358,11 @@ html, body {
           <label>GeckoTerminal API Key <span style="color:var(--text-muted);font-size:9px">optional — raises rate limit</span></label>
           <input type="password" id="defGeckoKey" placeholder="Paste your demo API key" autocomplete="off" />
           <div class="hint">Get a free key at geckoterminal.com → Account → API Keys. Stored locally in your browser only.</div>
+        </div>
+        <div class="field" style="margin-top:10px;">
+          <label>Display Timezone <span style="color:var(--text-muted);font-size:9px">UTC offset</span></label>
+          <input type="number" id="defTzOffset" placeholder="e.g. 1 for UTC+1, -5 for UTC-5" min="-12" max="14" step="0.5" />
+          <div class="hint">Applied to all timestamps in audit results. Leave blank for UTC.</div>
         </div>
         <button class="save-btn" id="saveSettingsBtn" onclick="saveSettings()">▸ SAVE AS DEFAULT</button>
       </div>
@@ -558,6 +569,7 @@ function saveSettings() {
     tp1: get('defTp1'), tp2: get('defTp2'), tp3: get('defTp3'),
     tp4: get('defTp4'), tp5: get('defTp5'),
     geckoKey: get('defGeckoKey'),
+    tzOffset: get('defTzOffset'),
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
   // Apply to live fields immediately
@@ -586,6 +598,7 @@ function loadSettings() {
     set('defTp1', s.tp1); set('defTp2', s.tp2); set('defTp3', s.tp3);
     set('defTp4', s.tp4); set('defTp5', s.tp5);
     set('defGeckoKey', s.geckoKey);
+    set('defTzOffset', s.tzOffset);
     // Pre-fill the live audit fields
     applySettings(s);
   } catch (e) {}
@@ -600,6 +613,24 @@ function resetToDefaults() {
 }
 
 loadSettings();
+
+// ──────────────────────────────────────────────
+// TIMEZONE HELPERS
+// ──────────────────────────────────────────────
+function getDisplayTzOffset() {
+  try {
+    const s = JSON.parse(localStorage.getItem('tradeAuditorSettings') || '{}');
+    const v = parseFloat(s.tzOffset);
+    return isNaN(v) ? 0 : v;
+  } catch (e) { return 0; }
+}
+function tzLabel() {
+  const off = getDisplayTzOffset();
+  if (off === 0) return 'UTC';
+  const sign = off > 0 ? '+' : '';
+  const str  = off % 1 === 0 ? String(off) : off.toFixed(1);
+  return `UTC${sign}${str}`;
+}
 
 // ──────────────────────────────────────────────
 // UTILITY FUNCTIONS
@@ -618,14 +649,17 @@ const fmt = {
   },
   ts(unix) {
     if (!unix) return 'N/A';
-    return new Date(unix * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+    const off = getDisplayTzOffset();
+    return new Date((unix + off * 3600) * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' ' + tzLabel();
   },
   tsLong(unix) {
     if (!unix) return 'N/A';
-    return new Date(unix * 1000).toUTCString();
+    const off = getDisplayTzOffset();
+    return new Date((unix + off * 3600) * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' ' + tzLabel();
   },
   dateOnly(unix) {
-    return new Date(unix * 1000).toUTCString().split(' ').slice(0, 4).join(' ');
+    const off = getDisplayTzOffset();
+    return new Date((unix + off * 3600) * 1000).toISOString().slice(0, 10);
   },
   duration(secs) {
     if (secs == null || isNaN(secs) || secs < 0) return 'N/A';
@@ -672,14 +706,23 @@ function getGeckoKey() {
   } catch (e) { return ''; }
 }
 
+// Module-level abort controller — set by runAudit, cleared in finally block.
+// apiFetch picks it up automatically so every fetch in the audit path is
+// cancellable without changing any intermediate caller signatures.
+let _auditAbort  = null;
+let _auditSignal = null;
+
 async function apiFetch(url, options = {}) {
-  // Attach the user's GeckoTerminal key on every proxy request so the
-  // server can forward it and get higher rate limits.
+  // Attach the user's GeckoTerminal key on every proxy request.
   if (url.startsWith('/api/gecko/') || url.startsWith('/api/mc-snapshot')) {
     const key = getGeckoKey();
     if (key) {
       options = { ...options, headers: { ...(options.headers || {}), 'X-Gecko-Key': key } };
     }
+  }
+  // Thread the audit abort signal into every fetch transparently.
+  if (_auditSignal && !_auditSignal.aborted) {
+    options = { ...options, signal: _auditSignal };
   }
   const r = await fetch(url, options);
   return r;
@@ -768,7 +811,12 @@ async function fetchAllGT(addr, entryTs) {
     if (earliest <= TARGET) break;
 
     beforeTs = earliest - 1;
-    await new Promise(r => setTimeout(r, PAGE_DELAY_MS));
+    // Honour cancellation during the inter-page delay
+    if (_auditSignal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(resolve, PAGE_DELAY_MS);
+      _auditSignal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Cancelled', 'AbortError')); }, { once: true });
+    });
   }
 
   all.sort((a, b) => a[0] - b[0]);
@@ -1624,16 +1672,25 @@ function generateBriefing({ entryTs, entryMC, supply, entrySLPct, trailSLPct, tp
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ${candleCount} × 1-min candles  |  Supply: ${supply.toLocaleString()}
-  Trade Auditor v1.0  |  ${new Date().toUTCString()}
+  Trade Auditor v1.0  |  ${fmt.tsLong(nowTs)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`.trim();
 }
 
 // ──────────────────────────────────────────────
 // MAIN AUDIT RUNNER
 // ──────────────────────────────────────────────
+function cancelAudit() {
+  if (_auditAbort) _auditAbort.abort();
+}
+
 async function runAudit() {
+  _auditAbort  = new AbortController();
+  _auditSignal = _auditAbort.signal;
+
   const btn = document.getElementById('auditBtn');
-  btn.disabled = true;
+  btn.innerHTML = '<span class="btn-shimmer"></span>✕ &nbsp;CANCEL AUDIT';
+  btn.classList.add('cancelling');
+  btn.onclick = cancelAudit;
   setStatus('SCANNING', 'active');
 
   const op = document.getElementById('outputPanel');
@@ -1859,6 +1916,19 @@ async function runAudit() {
     window._lastBriefing = briefing;
 
   } catch (err) {
+    if (err.name === 'AbortError') {
+      setStatus('STANDBY', '');
+      op.innerHTML = `
+        <div class="out-header">
+          <div class="out-title">▸ Audit Cancelled</div>
+        </div>
+        <div class="empty-state">
+          <div class="empty-hex">⬡</div>
+          <div class="empty-title">CANCELLED</div>
+          <div class="empty-desc">Edit your inputs and run a new audit when ready.</div>
+        </div>`;
+      return;
+    }
     setStatus('ERROR', 'error');
     const isRateLimit = err.message.startsWith('RATE_LIMIT:');
     const displayMsg  = err.message.replace(/^RATE_LIMIT:\s*/, '');
@@ -1885,10 +1955,15 @@ async function runAudit() {
         ${troubleshooting}
       </div>
     `;
-    console.error('[TradeAuditor]', err);
+    if (err.name !== 'AbortError') console.error('[TradeAuditor]', err);
+  } finally {
+    _auditAbort  = null;
+    _auditSignal = null;
+    const b = document.getElementById('auditBtn');
+    b.innerHTML = '<span class="btn-shimmer"></span>⬡ &nbsp;RUN AUDIT';
+    b.classList.remove('cancelling');
+    b.onclick = runAudit;
   }
-
-  document.getElementById('auditBtn').disabled = false;
 }
 
 // ──────────────────────────────────────────────
