@@ -1901,6 +1901,21 @@ function renderMultiAudit(op, versions, shared) {
     const tslCls   = v.tsl.disabled  ? ''   : v.tsl.triggered ? 'red' : 'green';
     const eslFloor  = v.entrySL > 0 ? fmt.mc(entryMC * (1 - v.entrySL / 100)) : 'N/A';
 
+    // Max gain reached before the first SL triggered
+    let peakBeforeSL, maxGainBeforeSL, maxGainCls;
+    if (v.tsl.triggered && v.tsl.peakBeforeTrigger) {
+      // TSL fired — peak is the ATH from which it was trailed out
+      peakBeforeSL = v.tsl.peakBeforeTrigger;
+    } else if (v.esl.triggered) {
+      // ESL fired (no TSL) — peak is highest seen before ESL hit
+      peakBeforeSL = v.esl.highest;
+    } else {
+      // No SL triggered — full ATH was available
+      peakBeforeSL = athMC;
+    }
+    maxGainBeforeSL = pct(entryMC, peakBeforeSL);
+    maxGainCls = maxGainBeforeSL >= 100 ? 'green' : maxGainBeforeSL >= 0 ? '' : 'red';
+
     let slOutcome;
     if (!v.esl.triggered && !v.tsl.triggered) slOutcome = 'Open / No SL Hit';
     else if (v.tsl.triggered && !v.esl.triggered) slOutcome = `TSL Exit @ ${fmt.mc(v.tsl.mc)}`;
@@ -1910,6 +1925,14 @@ function renderMultiAudit(op, versions, shared) {
     return `<div class="version-col">
       <div class="version-col-header ${col.cls}">
         ${v.label}<br/><span style="font-size:9px;font-weight:normal;opacity:0.8">ESL ${v.entrySL || '—'}% &nbsp;/&nbsp; TSL ${v.trailSL || '—'}%</span>
+      </div>
+      <div class="version-metric-row">
+        <span class="vm-label">Max Gain Before SL</span>
+        <span class="vm-val ${maxGainCls}" style="${!maxGainCls ? 'color:' + col.hex : ''}">${maxGainBeforeSL >= 0 ? '+' : ''}${maxGainBeforeSL.toFixed(1)}%</span>
+      </div>
+      <div class="version-metric-row">
+        <span class="vm-label">Peak Before SL</span>
+        <span class="vm-val small" style="color:${col.hex}">${fmt.mc(peakBeforeSL)}</span>
       </div>
       <div class="version-metric-row">
         <span class="vm-label">ESL Floor</span>
